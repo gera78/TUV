@@ -843,7 +843,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | P19 | Número da coluna 2 (Nº NFS-e / Referência) | ✅ Nº oficial da NFS-e – disponível no SAP após o passo 03 (J1BNFE) | – |
 | P23 | Campos SAP do retorno da Prefeitura | Nº NFS-e ✅ `J_1BNFDOC-NFENUM`. ⏳ Data/hora de autorização e código de verificação (cols. 3 e 4): verificar numa nota autorizada | `J_1BNFE_ACTIVE`; vazio se não existir |
 | P24 | Passos após o 06 do fluxo do cliente ("customer delivery") e se algum deles é o passo esquecido (P21) | ⏳ cliente | – |
-| P20 | Extensão do arquivo (.csv como o modelo ou .txt) – conteúdo igual (separador `;`) | ⏳ cliente | .csv (parametrizável) |
+| P20 | Extensão e separador do arquivo de saída | ✅ `.csv`, separado por `;` | – |
 | P21 | Passo adicional que o cliente disse ter esquecido de mencionar | ⏳ cliente | – |
 | P22 | Quem envia os RPS à Prefeitura | ✅ SAP padrão, J1BNFE (passo 03 do fluxo do cliente) – fora do escopo deste desenvolvimento. O RPS é numerado na planilha ✅ e vai para `NFNUM` via BAPI; o J1BNFE apenas envia | – |
 | P17 | Uso de TXT em 2026: 39 notas de 09/2026 no modelo têm e-mail `nao-informado@importacao.txt` (indício de importação TXT), apesar de a PMSP ter anunciado o fim do TXT para fatos geradores de 2026 | ⏳ sem informação da área | – |
