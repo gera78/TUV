@@ -827,8 +827,8 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | P13 | `P_DOCDAT` editável pelo admin e impacto nos livros fiscais / EFD-Reinf / DIRF dos tipos de retenção | ⏳ confirmar com fiscal | Admin pode alterar |
 | P14 | Prazo de retenção do log (LGPD) | ⏳ validar com DPO | 5 anos |
 | P15 | Arquivo de saída – PIS/COFINS (cols. 56–57) e CSLL (60): planilha nova não tem PIS/COFINS, e no modelo a nota WINITY de R$ 2.000,00 (NFS-e 38088) tem PIS 33,00 / COFINS 152,00 / CSLL 93,00, diferente das alíquotas do texto (13,00 / 60,00 / 20,00) | ⏳ fiscal | PIS/COFINS `0,00`; CSLL da planilha |
-| P16 | Arquivo de saída – quem consome o CSV e se aceita as colunas que só a PMSP preenche (Nº NFS-e, código de verificação) vazias | ⏳ | Vazias |
-| P17 | Uso de TXT em 2026: 39 notas de 09/2026 no modelo têm e-mail `nao-informado@importacao.txt` (indício de importação TXT), apesar de a PMSP ter anunciado o fim do TXT para fatos geradores de 2026 | ⏳ confirmar com a área | – |
+| P16 | Arquivo de saída – consumidor | ✅ Entregue a outro processo (desconhecido pela equipe) | Colunas exclusivas da PMSP (Nº NFS-e, código de verificação…) vão vazias – ⚠️ risco: validar com o dono do processo destino no teste integrado |
+| P17 | Uso de TXT em 2026: 39 notas de 09/2026 no modelo têm e-mail `nao-informado@importacao.txt` (indício de importação TXT), apesar de a PMSP ter anunciado o fim do TXT para fatos geradores de 2026 | ⏳ sem informação da área | – |
 | P18 | 💡 Caminho inverso: importar o CSV exportado pela PMSP para gravar Nº NFS-e / código de verificação no SAP e conciliar valores e cancelamentos (resolveria P1) | ⏳ decisão | Fora do escopo |
 
 ---
