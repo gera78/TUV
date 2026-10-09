@@ -637,8 +637,8 @@ Origem: **D** = `ZSD_BR_NFSE_DATA` (planilha) · **P** = parâmetro · **R** = r
 |---|---|---|---|
 | 1 | Tipo de Registro | R | `2` |
 | 2 | Nº NFS-e | SAP | `J_1BNFDOC-NFENUM` ✅ (gravado automaticamente pelo processo J1BNFE) |
-| 3 | Data Hora NFE | SAP | `J_1BNFE_ACTIVE-AUTHDATE` + `AUTHTIME` (⏳ P23 confirmar preenchimento) |
-| 4 | Código de Verificação da NFS-e | SAP | `J_1BNFE_ACTIVE`, provável `AUTHCOD` (⏳ P23 confirmar campo) |
+| 3 | Data Hora NFE | SAP | `J_1BNFDOC-AUTHDAT` + `AUTHTIME` ✅ |
+| 4 | Código de Verificação da NFS-e | SAP | `J_1BNFDOC-AUTHCOD` ✅ |
 | 5 | Tipo de RPS | R | `RPS` |
 | 6 | Série do RPS | P | `RPS_SERIES` (900) |
 | 7 | Número do RPS | D | RPS_NUMBER |
@@ -841,7 +841,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | P15 | Arquivo de saída – PIS/COFINS (cols. 56–57) e CSLL (60): planilha nova não tem PIS/COFINS, e no modelo a nota WINITY de R$ 2.000,00 (NFS-e 38088) tem PIS 33,00 / COFINS 152,00 / CSLL 93,00, diferente das alíquotas do texto (13,00 / 60,00 / 20,00) | ⏳ fiscal | PIS/COFINS `0,00`; CSLL da planilha |
 | P16 | Arquivo de saída – consumidor | ✅ Macro Excel da usuária (batch input) que lança o documento contábil; usa Nº RPS + Nº da nota (Referência) | Demais colunas exclusivas da PMSP vão vazias – validar a macro no teste integrado |
 | P19 | Número da coluna 2 (Nº NFS-e / Referência) | ✅ Nº oficial da NFS-e – disponível no SAP após o passo 03 (J1BNFE) | – |
-| P23 | Retorno da Prefeitura em `J_1BNFE_ACTIVE` | Nº NFS-e ✅ `J_1BNFDOC-NFENUM`. ⏳ Confirmar numa nota autorizada (SE16N): valor de `DOCSTA` para NFS-e autorizada, `AUTHDATE`/`AUTHTIME` e o campo do código de verificação (provável `AUTHCOD`) | Exportável = `DOCSTA = 1` e `NFENUM` preenchido |
+| P23 | Retorno da Prefeitura em `J_1BNFE_ACTIVE` | Nº NFS-e ✅ `J_1BNFDOC-NFENUM`. Data/hora e código de verificação ✅ `J_1BNFDOC-AUTHDAT`, `AUTHTIME`, `AUTHCOD`. ⏳ Confirmar numa nota autorizada o valor de `J_1BNFE_ACTIVE-DOCSTA` para NFS-e autorizada | Exportável = `DOCSTA = 1` e `NFENUM` preenchido |
 | P24 | Passos após o 06 do fluxo do cliente ("customer delivery") e se algum deles é o passo esquecido (P21) | ⏳ cliente | – |
 | P20 | Extensão e separador do arquivo de saída | ✅ `.csv`, separado por `;` | – |
 | P21 | Passo adicional que o cliente disse ter esquecido de mencionar | ⏳ cliente | – |
