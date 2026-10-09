@@ -424,7 +424,6 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | TAXGRP_REQ_02 | (vazio) | Não | Grupo 02 opcional |
 | TAXGRP_REQ_03 | (vazio) | Não | Grupo 03 opcional |
 | ISS_TOLERANCE | 0.01 | Não | Tolerância da msg 013 (padrão 0,01) |
-| RPS_TARGET | TEXT | Não | Destino do RPS ⏳ (TEXT = última linha do texto) |
 | MAX_LINES | 500 | Não | Limite de linhas por arquivo (msg 033) |
 | LOG_RETENTION_YEARS | 5 | Não | Prazo de retenção do log (LGPD) – padrão do expurgo ⏳ validar com DPO (P14) |
 | RPS_SERIES | 900 | Sim (saída) | Série do RPS – coluna 6 do arquivo de saída |
@@ -472,6 +471,7 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | 006 | Valor dos serviços ≤ 0 | I |
 | 007 | INSS + IRRF + CSLL + CBS ret. + IBS ret. + (ISS **se** ISS Retido = S) > valor dos serviços | I, L–Q, S |
 | 024 ✅ | Data de prestação vazia ou inválida | H |
+| 039 ✅ | RPS vazio, não numérico ou com mais de 6 dígitos (não cabe em `J_1BNFDOC-NFNUM`) | F |
 | 008 | Data de prestação > data de emissão (`P_DOCDAT`) | H |
 | 009 | Discriminação dos serviços vazia | AH |
 | 010 | CBS retido > CBS devido | J, O |
@@ -537,7 +537,7 @@ Uma NF por linha válida, 1 item, sob o bloqueio `EZSD_BR_NFSE`. Após a chamada
 | MANUAL | 'X' |
 | WAERK | 'BRL' |
 | PARVW / PARID / PARTYP | 'AG' / KUNNR / 'C' ✅ |
-| NFNUM / NFENUM | ⏳ RPS? (hoje: não preenchido, numeração conforme NF type) |
+| NFNUM | **RPS_NUMBER** ✅ (confirmado: o RPS é o `J_1BNFDOC-NFNUM`, 6 dígitos). Pré-requisito: NF type Z1 com numeração externa (manual) na J_1BAA |
 
 ### 11.2 `OBJ_PARTNER`
 
@@ -582,7 +582,7 @@ Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usad
 ### 11.5 `OBJ_HEADER_MSG` – texto da NF
 
 - Discriminação dos serviços: `||` e `|` = quebra de linha; cada linha quebrada em blocos de 72 caracteres (sem cortar palavras).
-- Última linha: `RPS: <número>` (enquanto `RPS_TARGET = TEXT`) ⏳.
+- O RPS não é repetido no texto: ele é o próprio número da NF (`NFNUM`).
 
 ### 11.6 Retorno
 
@@ -807,6 +807,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | 036 | Output file &1 could not be written; nothing was recorded | ✅ |
 | 037 | No lines selected for export | ✅ |
 | 038 | &1 lines exported to &2 | ✅ |
+| 039 | RPS &1 is invalid (numeric, max. 6 digits) | ✅ |
 
 ---
 
@@ -814,7 +815,8 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 
 | # | Item | Status | Tratamento provisório |
 |---|---|---|---|
-| P1 | Destino do RPS (campo específico ou texto) | ⏳ | Última linha do texto da NF (`RPS_TARGET = TEXT`) |
+| P1 | Destino do RPS | ✅ `J_1BNFDOC-NFNUM` (confirmado pelo cliente) | – |
+| P1a | Série da NF: a PMSP usa série de RPS 900 – a série do NF type Z1 (J_1BAA) deve ser 900? | ⏳ cliente | Série do NF type |
 | P2 | Significado do CR | ⏳ | Gravado e exibido no log; não vai à NF |
 | P3 | Objeto de autorização da J1B1N (SU24) | ⏳ | `F_BKPF_BUK` + `S_TCODE` |
 | P4 | Valores fiscais dos parâmetros (TAXTYP, TAXLW, CFOP, ITMTYP, MATUSE) | ⏳ consultor fiscal | – |
