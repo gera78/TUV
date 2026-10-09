@@ -595,7 +595,9 @@ Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usad
 
 ## 11A. Arquivo de saída – CSV no layout da exportação de NFS-e da PMSP ✅
 
-**Objetivo**: gerar, para as linhas selecionadas, um CSV no mesmo layout do arquivo exportado pelo portal Nota Fiscal Paulistana (`NFSe_E_<IM>_<data ini>_<data fim>.csv`, modelo recebido: 295 notas de 09/2026).
+**Objetivo**: gerar, para as linhas selecionadas, um arquivo no mesmo layout do arquivo exportado pelo portal Nota Fiscal Paulistana (`NFSe_E_<IM>_<data ini>_<data fim>.csv`, modelo recebido: 295 notas de 09/2026).
+
+**Uso (conforme o cliente)**: o arquivo **não vai para a Prefeitura**. Hoje a usuária baixa esse arquivo do portal e o carrega numa macro Excel externa (simula batch input) que lança o documento contábil; da macro só são usados o **Nº do RPS** e o **Nº da nota fiscal**, que vai para a **Referência** do documento contábil. O programa de lançamento contábil **não** faz parte deste projeto. Como a macro provavelmente lê por posição de coluna, o arquivo mantém as 73 colunas na mesma ordem.
 
 ### 11A.1 Fluxo
 
@@ -627,7 +629,7 @@ Origem: **D** = `ZSD_BR_NFSE_DATA` (planilha) · **P** = parâmetro · **R** = r
 | Col. | Coluna | Origem | Regra |
 |---|---|---|---|
 | 1 | Tipo de Registro | R | `2` |
-| 2 | Nº NFS-e | – | Vazio (gerado pela PMSP) – ⏳ P18 |
+| 2 | Nº NFS-e | ⏳ | **P19** – número da nota que a macro usa na Referência: NF Writer (`J_1BNFDOC-NFENUM`/`NFNUM`), DOCNUM, ou Nº oficial da NFS-e (só existe após a emissão na PMSP) |
 | 3 | Data Hora NFE | – | Vazio |
 | 4 | Código de Verificação da NFS-e | – | Vazio |
 | 5 | Tipo de RPS | R | `RPS` |
@@ -827,7 +829,11 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | P13 | `P_DOCDAT` editável pelo admin e impacto nos livros fiscais / EFD-Reinf / DIRF dos tipos de retenção | ⏳ confirmar com fiscal | Admin pode alterar |
 | P14 | Prazo de retenção do log (LGPD) | ⏳ validar com DPO | 5 anos |
 | P15 | Arquivo de saída – PIS/COFINS (cols. 56–57) e CSLL (60): planilha nova não tem PIS/COFINS, e no modelo a nota WINITY de R$ 2.000,00 (NFS-e 38088) tem PIS 33,00 / COFINS 152,00 / CSLL 93,00, diferente das alíquotas do texto (13,00 / 60,00 / 20,00) | ⏳ fiscal | PIS/COFINS `0,00`; CSLL da planilha |
-| P16 | Arquivo de saída – consumidor | ✅ Entregue a outro processo (desconhecido pela equipe) | Colunas exclusivas da PMSP (Nº NFS-e, código de verificação…) vão vazias – ⚠️ risco: validar com o dono do processo destino no teste integrado |
+| P16 | Arquivo de saída – consumidor | ✅ Macro Excel da usuária (batch input) que lança o documento contábil; usa Nº RPS + Nº da nota (Referência) | Demais colunas exclusivas da PMSP vão vazias – validar a macro no teste integrado |
+| P19 | Qual número vai na coluna 2 (Nº NFS-e) e, portanto, na Referência do documento contábil: número da NF Writer, DOCNUM ou Nº oficial da NFS-e da PMSP? Se for o oficial, ele não existe no SAP no momento da exportação (ver P18) | ⏳ cliente | – |
+| P20 | Extensão do arquivo (.csv como o modelo ou .txt) – conteúdo igual (separador `;`) | ⏳ cliente | .csv (parametrizável) |
+| P21 | Passo adicional que o cliente disse ter esquecido de mencionar | ⏳ cliente | – |
+| P22 | Quem envia os RPS à Prefeitura após a criação da NF no SAP (processo atual via TXT/planilha continua?) | ⏳ cliente | Fora do escopo |
 | P17 | Uso de TXT em 2026: 39 notas de 09/2026 no modelo têm e-mail `nao-informado@importacao.txt` (indício de importação TXT), apesar de a PMSP ter anunciado o fim do TXT para fatos geradores de 2026 | ⏳ sem informação da área | – |
 | P18 | 💡 Caminho inverso: importar o CSV exportado pela PMSP para gravar Nº NFS-e / código de verificação no SAP e conciliar valores e cancelamentos (resolveria P1) | ⏳ decisão | Fora do escopo |
 
