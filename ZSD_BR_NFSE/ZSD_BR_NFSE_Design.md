@@ -425,6 +425,7 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | TAXGRP_REQ_03 | (vazio) | Não | Grupo 03 opcional |
 | ISS_TOLERANCE | 0.01 | Não | Tolerância da msg 013 (padrão 0,01) |
 | MAX_LINES | 500 | Não | Limite de linhas por arquivo (msg 033) |
+| SEND_CBS_IBS | (vazio) | Não | ✅ `X` = envia CBS/IBS (devidos e retidos) à NF. Vazio = não envia: valores ficam gravados e validados (010/011/014), mas sem linha de imposto na NF e sem exigir `TAXTYP_CBS*`/`TAXTYP_IBS*` (023). Ligar quando as notas da Reforma Tributária estiverem completas (P5) |
 | LOG_RETENTION_YEARS | 5 | Não | Prazo de retenção do log (LGPD) – padrão do expurgo ⏳ validar com DPO (P14) |
 | RPS_SERIES | 900 | Sim (saída) | Série do RPS – coluna 6 do arquivo de saída |
 | PRV_MUN_REG | 8.169.973-5 | Sim (saída) | Inscrição municipal do prestador (col. 9; também compõe o nome do arquivo) |
@@ -483,7 +484,7 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | 016 | Município preenchido e 2 primeiros dígitos IBGE ≠ UF (tabela de 27 UFs) ou código ≠ 7 dígitos | V, W |
 | 017 ✅ | Duplicidade critério A – ver seção 10 | F |
 | 026 ✅ | Duplicidade critério B – ver seção 10 | B, H, I, U |
-| 023 ✅ | Coluna de imposto com valor > 0 sem `TAXTYP_*` configurado | J–Q, S |
+| 023 ✅ | Coluna de imposto com valor > 0 sem `TAXTYP_*` configurado (colunas J, K, O, P só verificadas com `SEND_CBS_IBS = X`) | J–Q, S |
 | 025 ✅ | Parâmetro obrigatório não configurado (CFOP, TAXLW*, ITMTYP, MATUSE…) | – |
 
 **Avisos (tipo W – não bloqueiam; semáforo amarelo)** ✅
@@ -576,6 +577,8 @@ Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usad
 | 03 | O – CBS Retido | TAXTYP_CBS_WHT | Valor serviços | valor ÷ base × 100 | O |
 | 03 | P – IBS Retido | TAXTYP_IBS_WHT | Valor serviços | valor ÷ base × 100 | P |
 | 03 | Q – ISS | TAXTYP_ISS (S/N) | Valor serviços | Alíquota × 100 | Q |
+
+> **CBS/IBS (colunas J, K, O, P)**: enviados somente com `SEND_CBS_IBS = X`. Com o parâmetro vazio, a NF é criada sem essas linhas e o log do arquivo recebe a msg 040 (tipo I) uma vez.
 
 > ⚠️ Pré-requisito fiscal: tipos de retenção configurados como **retenção** na J_1BAJ (não somam ao total da NF) e NF type Z1 sem lançamento contábil (J_1BAA).
 
@@ -810,6 +813,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | 037 | No lines selected for export | ✅ |
 | 038 | &1 lines exported to &2 | ✅ |
 | 039 | RPS &1 is invalid (numeric, max. 6 digits) | ✅ |
+| 040 | CBS/IBS not sent to the NF (parameter SEND_CBS_IBS is off) | ✅ (I) |
 
 ---
 
@@ -822,7 +826,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | P2 | Significado do CR | ⏳ | Gravado e exibido no log; não vai à NF |
 | P3 | Objeto de autorização | ✅ Igual à J1B1N: `F_BKPF_BUK` (BUKRS, ACTVT 01) + `S_TCODE` | – |
 | P4 | Valores fiscais dos parâmetros (TAXTYP, TAXLW, CFOP, ITMTYP, MATUSE) | ⏳ consultor fiscal | – |
-| P5 | Notas da reforma (campos CBS/IBS/NBS/cClassTrib) | ⏳ em implantação | Preenchimento dinâmico |
+| P5 | Notas da reforma (campos CBS/IBS/NBS/cClassTrib) | ⏳ em implantação | Preenchimento dinâmico + `SEND_CBS_IBS` vazio até concluir |
 | P6 | Significado da coluna AS ("Nacional") | ⏳ | Gravada, sem uso |
 | P7 | Parameter ID do DOCNUM na J1B3N (`JEF`) | Técnico – o desenvolvedor verifica na codificação (SE11, elemento `J_1BDOCNUM`) | – |
 | P8 | Nomes do header (Developer / IT / Business) | ⏳ | `<TBD>` |
