@@ -7,7 +7,7 @@
 | Projeto | TÜV – Criação de NF Writer a partir de planilha de NFS-e |
 | Empresa / Local de negócio | 5596 / 0001 (padrão) |
 | Ambiente | SAP S/4HANA (notas da Reforma Tributária em implantação) |
-| Versão | 0.1 – Rascunho para revisão |
+| Versão | 0.2 – Sugestões aprovadas (P_TEST, mensagens 017–025); mockup publicado |
 | Data | 09.10.2026 |
 | Developer / IT Responsible / Business Responsible | `<TBD>` |
 | Status | Em revisão → próximo passo: Mockup → aprovação → codificação |
@@ -115,7 +115,7 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
 | `P_BRANCH` | `J_1BBRANC_` | 0001 | Sim | Validado contra `J_1BBRANCH` |
 | `P_NFTYPE` | `J_1BNFTYPE` | Z1 | Sim | Validado contra `J_1BAA` |
 | `P_FILE` | `STRING`/`RLGRAP-FILENAME` | – | Sim | F4: `CL_GUI_FRONTEND_SERVICES=>FILE_OPEN_DIALOG` (filtro *.xlsx;*.xlsm) |
-| 💡 `P_TEST` | Checkbox | vazio | Não | "Validate only (no NF creation)" |
+| `P_TEST` | Checkbox | vazio | Não | "Validate only (no NF creation)" ✅ – valida e grava log, sem chamar a BAPI |
 
 **Bloco "Log selection"** – visível só com `P_RLOG`
 
@@ -184,7 +184,7 @@ Mesmos blocos do usuário + radio `P_RPARM` – "Maintain parameters". Com `P_RP
 | SUCCESS_COUNT | | `ZSD_BR_NFSE_SUCCESS_COUNT` | INT4 | Lines with success |
 | ERROR_COUNT | | `ZSD_BR_NFSE_ERROR_COUNT` | INT4 | Lines with error |
 | STATUS | | `ZSD_BR_NFSE_FILE_STATUS` | CHAR 1 | File status |
-| 💡 TEST_RUN | | `ZSD_BR_NFSE_TEST_RUN` | CHAR 1 | Validation only (se `P_TEST` for aprovado) |
+| TEST_RUN | | `ZSD_BR_NFSE_TEST_RUN` | CHAR 1 | Validation only (`P_TEST`) ✅ |
 
 ### 6.3 `ZSD_BR_NFSE_DATA` – linhas da planilha (1 registro por linha)
 
@@ -377,14 +377,14 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | Msg | Regra | Colunas |
 |---|---|---|
 | 002 | Cliente não existe (`KNA1`) | B |
-| 019 💡 | Cliente não ampliado para a empresa (`KNB1`) | B |
-| 020 💡 | Cliente bloqueado (bloqueio central/empresa ou marcado para eliminação) | B |
+| 019 ✅ | Cliente não ampliado para a empresa (`KNB1`) | B |
+| 020 ✅ | Cliente bloqueado (bloqueio central/empresa ou marcado para eliminação) | B |
 | 003 | CPF/CNPJ (só dígitos) ≠ `KNA1-STCD1` (CNPJ, 14 díg.) / `STCD2` (CPF, 11 díg.) | B, X |
 | 004 | Código de serviço vazio ou zero | U |
 | 005 | Sem parâmetro MATNR para o código, ou material inexistente / não ampliado para o centro | U |
 | 006 | Valor dos serviços ≤ 0 | I |
 | 007 | INSS + IRRF + CSLL + CBS ret. + IBS ret. + (ISS **se** ISS Retido = S) > valor dos serviços | I, L–Q, S |
-| 024 💡 | Data de prestação vazia ou inválida | H |
+| 024 ✅ | Data de prestação vazia ou inválida | H |
 | 008 | Data de prestação > data de emissão (SY-DATUM) | H |
 | 009 | Discriminação dos serviços vazia | AH |
 | 010 | CBS retido > CBS devido | J, O |
@@ -394,9 +394,9 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | 014 | Grupo marcado como obrigatório (`TAXGRP_REQ_nn`) sem nenhum valor > 0 (grupo 01: J/K · 02: L · 03: M–Q) ✅ | J–Q |
 | 015 | Prestação fora de SP = S e município vazio | T, V |
 | 016 | Município preenchido e 2 primeiros dígitos IBGE ≠ UF (tabela de 27 UFs) ou código ≠ 7 dígitos | V, W |
-| 017 💡 | RPS já processado com sucesso para o mesmo BUKRS + cliente (outro arquivo ou mesmo arquivo) | B, F |
+| 017 ✅ | RPS já usado: processado com sucesso em outro arquivo ou repetido no mesmo arquivo. ⏳ Chave da verificação: BUKRS + BRANCH (proposta v0.2, ver P10) ou BUKRS + cliente | B, F |
 | 023 ✅ | Coluna de imposto com valor > 0 sem `TAXTYP_*` configurado | J–Q, S |
-| 025 💡 | Parâmetro obrigatório não configurado (CFOP, TAXLW*, ITMTYP, MATUSE…) | – |
+| 025 ✅ | Parâmetro obrigatório não configurado (CFOP, TAXLW*, ITMTYP, MATUSE…) | – |
 
 ---
 
@@ -538,15 +538,15 @@ Mesma estrutura do 13.1, com colunas adicionais visíveis: **FILE_ID, FILE_NAME,
 | 014 | Tax group &1 not filled | ✅ |
 | 015 | Service municipality not filled | ✅ |
 | 016 | UF &1 does not match municipality code &2 | ✅ |
-| 017 | RPS &1 already processed for customer &2 (NF &3) | 💡 |
-| 018 | File &1 could not be read or worksheet &2 not found | 💡 |
-| 019 | Customer &1 not extended to company code &2 | 💡 |
-| 020 | Customer &1 is blocked | 💡 |
-| 021 | No authorization for company code &1 / transaction &2 | 💡 |
-| 022 | Nota Fiscal &1 created successfully | 💡 |
+| 017 | RPS &1 already used (file &2, line &3) | ✅ |
+| 018 | File &1 could not be read or worksheet &2 not found | ✅ |
+| 019 | Customer &1 not extended to company code &2 | ✅ |
+| 020 | Customer &1 is blocked | ✅ |
+| 021 | No authorization for company code &1 / transaction &2 | ✅ |
+| 022 | Nota Fiscal &1 created successfully | ✅ |
 | 023 | Tax type not configured for &1 | ✅ |
-| 024 | Service date missing or invalid | 💡 |
-| 025 | Parameter &1 not configured for value &2 | 💡 |
+| 024 | Service date missing or invalid | ✅ |
+| 025 | Parameter &1 not configured for value &2 | ✅ |
 
 ---
 
@@ -562,13 +562,14 @@ Mesma estrutura do 13.1, com colunas adicionais visíveis: **FILE_ID, FILE_NAME,
 | P6 | Significado da coluna AS ("Nacional") | ⏳ | Gravada, sem uso |
 | P7 | Parameter ID do DOCNUM na J1B3N (`JEF`) | ⏳ verificar no sistema | – |
 | P8 | Nomes do header (Developer / IT / Business) | ⏳ | `<TBD>` |
-| P9 | Sugestões 💡 (P_TEST, msgs 017–022, 024, 025) | ⏳ aprovação | Incluídas no desenho |
+| P9 | Sugestões (P_TEST, msgs 017–022, 024, 025) | ✅ aprovadas | – |
+| P10 | Chave da verificação de RPS duplicado (017): o RPS é sequência do prestador, então a planilha-modelo tem o RPS 37379 em duas linhas (WINITY e COMPESA) | ⏳ | Proposta: BUKRS + BRANCH |
 
 ---
 
 ## 16. Próximos passos
 
 1. Revisão deste documento.
-2. **Mockup** das telas (seleção usuário/admin, ALV de processamento, ALV de log, popup de mensagens, manutenção de parâmetros).
+2. **Mockup** das telas – publicado: https://claude.ai/artifact/UewVEduzZQ7zAnPXbE3VZj
 3. Aprovação.
 4. Codificação + especificação final do DDIC.
