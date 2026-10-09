@@ -839,7 +839,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | P24 | Passos após o 06 do fluxo do cliente ("customer delivery") e se algum deles é o passo esquecido (P21) | ⏳ cliente | – |
 | P20 | Extensão do arquivo (.csv como o modelo ou .txt) – conteúdo igual (separador `;`) | ⏳ cliente | .csv (parametrizável) |
 | P21 | Passo adicional que o cliente disse ter esquecido de mencionar | ⏳ cliente | – |
-| P22 | Quem envia os RPS à Prefeitura | ✅ SAP padrão, J1BNFE (passo 03 do fluxo do cliente) – fora do escopo deste desenvolvimento. ⏳ Confirmar quem numera o RPS: planilha (→ `NFNUM` via BAPI) ou J1BNFE ("Number RPS") | – |
+| P22 | Quem envia os RPS à Prefeitura | ✅ SAP padrão, J1BNFE (passo 03 do fluxo do cliente) – fora do escopo deste desenvolvimento. O RPS é numerado na planilha ✅ e vai para `NFNUM` via BAPI; o J1BNFE apenas envia | – |
 | P17 | Uso de TXT em 2026: 39 notas de 09/2026 no modelo têm e-mail `nao-informado@importacao.txt` (indício de importação TXT), apesar de a PMSP ter anunciado o fim do TXT para fatos geradores de 2026 | ⏳ sem informação da área | – |
 | P18 | Caminho inverso (importar o CSV da PMSP) | ❌ Descartado – o retorno da NFS-e já chega ao SAP via J1BNFE | – |
 
