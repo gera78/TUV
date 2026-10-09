@@ -9,7 +9,7 @@
 | Ambiente | SAP S/4HANA (notas da Reforma Tributária em implantação) |
 | Versão | 0.4 – Nova opção: geração do arquivo de saída (CSV no layout da exportação de NFS-e da PMSP) com controle de exportação |
 | Data | 09.10.2026 |
-| Developer / IT Responsible / Business Responsible | `<TBD>` |
+| Developer / IT Responsible / Business Responsible | Renato Santos / Renato Santos / Juliana Reimberg |
 | Status | Em revisão do mockup → aprovação → codificação |
 
 > Convenções deste documento: ✅ decidido · ⏳ pendente · 💡 sugestão (aguarda aprovação).
@@ -831,7 +831,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | P5 | Notas da reforma (campos CBS/IBS/NBS/cClassTrib) | ⏳ em implantação | Preenchimento dinâmico + `SEND_CBS_IBS` vazio até concluir |
 | P6 | Significado da coluna AS ("Nacional") | ⏳ | Gravada, sem uso |
 | P7 | Parameter ID do DOCNUM na J1B3N (`JEF`) | Técnico – o desenvolvedor verifica na codificação (SE11, elemento `J_1BDOCNUM`) | – |
-| P8 | Nomes do header (Developer / IT / Business) | ⏳ | `<TBD>` |
+| P8 | Nomes do header | ✅ Developer e IT: Renato Santos · Business: Juliana Reimberg | – |
 | P9 | Sugestões (P_TEST, msgs 017–022, 024, 025) | ✅ aprovadas | – |
 | P10 | Chave do RPS duplicado | ✅ BUKRS + BRANCH | – |
 | P11 | Guardar o arquivo original (`FILE_CONTENT`) | 💡 opcional | Não implementado salvo decisão |
