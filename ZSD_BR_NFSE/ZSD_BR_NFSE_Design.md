@@ -170,7 +170,7 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
 | `S_SITU` | T / F | Tipo de tributação: T = dentro de SP · F = fora de SP (derivado de "Prestação fora de SP") |
 | `P_NEWONLY` | Checkbox, padrão X | "Not yet exported only" – desmarcado traz também as já exportadas |
 
-Somente linhas com **status S** (NF criada) e **NF não cancelada** no SAP são selecionáveis. O resultado abre no ALV de exportação (seção 14.3), onde o usuário marca as linhas e gera o arquivo.
+Somente linhas com **status S** (NF criada), **NFS-e autorizada** (retorno da Prefeitura recebido via J1BNFE) e **NF não cancelada** no SAP são selecionáveis. Linhas ainda não autorizadas aparecem no ALV como "Awaiting authorization", sem checkbox. O resultado abre no ALV de exportação (seção 14.3), onde o usuário marca as linhas e gera o arquivo.
 
 ### 4.2 Programa do admin (`ZNFSE_ADM`)
 
@@ -597,6 +597,8 @@ Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usad
 
 **Objetivo**: gerar, para as linhas selecionadas, um arquivo no mesmo layout do arquivo exportado pelo portal Nota Fiscal Paulistana (`NFSe_E_<IM>_<data ini>_<data fim>.csv`, modelo recebido: 295 notas de 09/2026).
 
+**Posição no processo (fluxo do cliente)**: 01 Upload Excel → 02 SAP cria a NF Writer (J1B1N – opção 1) → 03 RPS e envio à Prefeitura (**J1BNFE**, padrão SAP) → **04 Download dos dados da NFS-e autorizada (esta opção 3)** → 05 Planilha de lançamento (Ductor) → 06 Macro de lançamento (Ductor). Como o envio à Prefeitura passa pelo SAP (passo 03), o **Nº oficial da NFS-e e o código de verificação voltam para o SAP** e podem ser exportados.
+
 **Uso (conforme o cliente)**: o arquivo **não vai para a Prefeitura**. Hoje a usuária baixa esse arquivo do portal e o carrega numa macro Excel externa (simula batch input) que lança o documento contábil; da macro só são usados o **Nº do RPS** e o **Nº da nota fiscal**, que vai para a **Referência** do documento contábil. O programa de lançamento contábil **não** faz parte deste projeto. Como a macro provavelmente lê por posição de coluna, o arquivo mantém as 73 colunas na mesma ordem.
 
 ### 11A.1 Fluxo
@@ -629,9 +631,9 @@ Origem: **D** = `ZSD_BR_NFSE_DATA` (planilha) · **P** = parâmetro · **R** = r
 | Col. | Coluna | Origem | Regra |
 |---|---|---|---|
 | 1 | Tipo de Registro | R | `2` |
-| 2 | Nº NFS-e | ⏳ | **P19** – número da nota que a macro usa na Referência: NF Writer (`J_1BNFDOC-NFENUM`/`NFNUM`), DOCNUM, ou Nº oficial da NFS-e (só existe após a emissão na PMSP) |
-| 3 | Data Hora NFE | – | Vazio |
-| 4 | Código de Verificação da NFS-e | – | Vazio |
+| 2 | Nº NFS-e | SAP | Nº oficial da NFS-e devolvido pela Prefeitura no passo 03 (J1BNFE) – ⏳ **P23** campo exato (provável `J_1BNFDOC-NFENUM`) |
+| 3 | Data Hora NFE | SAP | Data/hora da autorização (`J_1BNFE_ACTIVE` – ⏳ P23) |
+| 4 | Código de Verificação da NFS-e | SAP | Código de verificação devolvido pela Prefeitura – ⏳ P23 campo exato |
 | 5 | Tipo de RPS | R | `RPS` |
 | 6 | Série do RPS | P | `RPS_SERIES` (900) |
 | 7 | Número do RPS | D | RPS_NUMBER |
@@ -832,12 +834,14 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | P14 | Prazo de retenção do log (LGPD) | ⏳ validar com DPO | 5 anos |
 | P15 | Arquivo de saída – PIS/COFINS (cols. 56–57) e CSLL (60): planilha nova não tem PIS/COFINS, e no modelo a nota WINITY de R$ 2.000,00 (NFS-e 38088) tem PIS 33,00 / COFINS 152,00 / CSLL 93,00, diferente das alíquotas do texto (13,00 / 60,00 / 20,00) | ⏳ fiscal | PIS/COFINS `0,00`; CSLL da planilha |
 | P16 | Arquivo de saída – consumidor | ✅ Macro Excel da usuária (batch input) que lança o documento contábil; usa Nº RPS + Nº da nota (Referência) | Demais colunas exclusivas da PMSP vão vazias – validar a macro no teste integrado |
-| P19 | Qual número vai na coluna 2 (Nº NFS-e) e, portanto, na Referência do documento contábil: número da NF Writer, DOCNUM ou Nº oficial da NFS-e da PMSP? Se for o oficial, ele não existe no SAP no momento da exportação (ver P18) | ⏳ cliente | – |
+| P19 | Número da coluna 2 (Nº NFS-e / Referência) | ✅ Nº oficial da NFS-e – disponível no SAP após o passo 03 (J1BNFE) | – |
+| P23 | Campos SAP onde o retorno da Prefeitura grava Nº NFS-e, data/hora de autorização e código de verificação (depende da solução de NFS-e usada no J1BNFE: DRC/GRC/parceiro) | ⏳ verificar no sistema | `J_1BNFDOC-NFENUM` / `J_1BNFE_ACTIVE` |
+| P24 | Passos após o 06 do fluxo do cliente ("customer delivery") e se algum deles é o passo esquecido (P21) | ⏳ cliente | – |
 | P20 | Extensão do arquivo (.csv como o modelo ou .txt) – conteúdo igual (separador `;`) | ⏳ cliente | .csv (parametrizável) |
 | P21 | Passo adicional que o cliente disse ter esquecido de mencionar | ⏳ cliente | – |
-| P22 | Quem envia os RPS à Prefeitura após a criação da NF no SAP (processo atual via TXT/planilha continua?) | ⏳ cliente | Fora do escopo |
+| P22 | Quem envia os RPS à Prefeitura | ✅ SAP padrão, J1BNFE (passo 03 do fluxo do cliente) – fora do escopo deste desenvolvimento. ⏳ Confirmar quem numera o RPS: planilha (→ `NFNUM` via BAPI) ou J1BNFE ("Number RPS") | – |
 | P17 | Uso de TXT em 2026: 39 notas de 09/2026 no modelo têm e-mail `nao-informado@importacao.txt` (indício de importação TXT), apesar de a PMSP ter anunciado o fim do TXT para fatos geradores de 2026 | ⏳ sem informação da área | – |
-| P18 | 💡 Caminho inverso: importar o CSV exportado pela PMSP para gravar Nº NFS-e / código de verificação no SAP e conciliar valores e cancelamentos (resolveria P1) | ⏳ decisão | Fora do escopo |
+| P18 | Caminho inverso (importar o CSV da PMSP) | ❌ Descartado – o retorno da NFS-e já chega ao SAP via J1BNFE | – |
 
 ---
 
