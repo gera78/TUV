@@ -1,0 +1,81 @@
+*---------------------------------------------------------------------*
+* Include   ZSD_BR_NFSE_SCR_COM                                       *
+*---------------------------------------------------------------------*
+* Date:                 09.10.2026                                    *
+* Developer:            Renato Santos                                 *
+* IT Responsible:       Renato Santos                                 *
+* Business Responsible: Juliana Reimberg                              *
+*---------------------------------------------------------------------*
+* Functional description                                              *
+* Selection-screen blocks shared by the user and admin programs:      *
+*   - Upload parameters      (option 1, MODIF ID UPL / DOC)           *
+*   - Log selection          (option 2, MODIF ID LOG)                 *
+*   - Output file selection  (option 3, MODIF ID EXP)                 *
+* Included by ZSD_BR_NFSE_SCR and ZSD_BR_NFSE_SCR_ADM right after     *
+* their processing-option radio buttons. Which block is visible is    *
+* decided in AT SELECTION-SCREEN OUTPUT of those includes.            *
+* No field is OBLIGATORY: that check fires on every radio-button      *
+* round trip. Required fields are checked in CHECK_SELECTION_SCREEN   *
+* (ZSD_BR_NFSE_F01), only when the user presses Execute.              *
+*---------------------------------------------------------------------*
+* Authorization logic                                                 *
+* None here - see FORM CHECK_AUTHORITY (ZSD_BR_NFSE_F01).             *
+*---------------------------------------------------------------------*
+* Change history                                                      *
+* 09.10.2026  Renato Santos                                           *
+* Initial version.                                                    *
+*---------------------------------------------------------------------*
+
+*---------------------------------------------------------------------*
+* Option 1 - Process upload and create NF Writer
+*---------------------------------------------------------------------*
+SELECTION-SCREEN BEGIN OF BLOCK b_upl WITH FRAME TITLE TEXT-b02.
+  PARAMETERS:
+    p_bukrs  TYPE bukrs              DEFAULT '5596' MODIF ID upl,
+    p_branch TYPE j_1bbranc_         DEFAULT '0001' MODIF ID upl,
+    p_nftype TYPE j_1bnftype         DEFAULT 'Z1'   MODIF ID upl,
+* Issue date: display only in the user program, editable in the admin
+* program (month-end closing) - see AT SELECTION-SCREEN OUTPUT.
+    p_docdat TYPE j_1bnfdoc-docdat   DEFAULT sy-datum MODIF ID doc,
+    p_file   TYPE rlgrap-filename    LOWER CASE     MODIF ID upl,
+    p_test   AS CHECKBOX                            MODIF ID upl.
+SELECTION-SCREEN END OF BLOCK b_upl.
+
+*---------------------------------------------------------------------*
+* Option 2 - Display execution log
+*---------------------------------------------------------------------*
+SELECTION-SCREEN BEGIN OF BLOCK b_log WITH FRAME TITLE TEXT-b03.
+  SELECT-OPTIONS:
+    s_lbukrs FOR zsd_br_nfse_file-bukrs      MODIF ID log,
+    s_lbranc FOR zsd_br_nfse_file-branch     MODIF ID log,
+    s_lfile  FOR zsd_br_nfse_file-file_id    MODIF ID log,
+    s_ldate  FOR zsd_br_nfse_file-exec_date  MODIF ID log,
+    s_luser  FOR zsd_br_nfse_file-exec_user  MODIF ID log,
+    s_lfstat FOR zsd_br_nfse_file-status     MODIF ID log,
+    s_llstat FOR zsd_br_nfse_data-status     MODIF ID log,
+    s_lkunnr FOR zsd_br_nfse_data-kunnr      MODIF ID log,
+    s_lrps   FOR zsd_br_nfse_data-rps_number MODIF ID log,
+    s_ldocn  FOR zsd_br_nfse_data-docnum     MODIF ID log,
+    s_lmsgno FOR zsd_br_nfse_log-msgno       MODIF ID log.
+  PARAMETERS:
+    p_lerr AS CHECKBOX MODIF ID log.
+SELECTION-SCREEN END OF BLOCK b_log.
+
+*---------------------------------------------------------------------*
+* Option 3 - Generate output file (CSV)
+*---------------------------------------------------------------------*
+SELECTION-SCREEN BEGIN OF BLOCK b_exp WITH FRAME TITLE TEXT-b04.
+  SELECT-OPTIONS:
+    s_xbukrs FOR zsd_br_nfse_file-bukrs        MODIF ID exp,
+    s_xbranc FOR zsd_br_nfse_file-branch       MODIF ID exp,
+    s_xrps   FOR zsd_br_nfse_data-rps_number   MODIF ID exp,
+    s_xsrvdt FOR zsd_br_nfse_data-service_date MODIF ID exp,
+    s_xexdt  FOR zsd_br_nfse_file-exec_date    MODIF ID exp,
+    s_xfile  FOR zsd_br_nfse_file-file_id      MODIF ID exp,
+    s_xkunnr FOR zsd_br_nfse_data-kunnr        MODIF ID exp,
+    s_xsrvcd FOR zsd_br_nfse_data-service_code MODIF ID exp.
+  PARAMETERS:
+* Taxation type: T = service within São Paulo, F = outside, blank = both
+    p_xsitu TYPE char1 MODIF ID exp,
+    p_xnew  AS CHECKBOX DEFAULT 'X' MODIF ID exp.
+SELECTION-SCREEN END OF BLOCK b_exp.

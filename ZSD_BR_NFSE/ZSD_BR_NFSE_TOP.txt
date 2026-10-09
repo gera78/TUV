@@ -1,0 +1,288 @@
+*---------------------------------------------------------------------*
+* Include   ZSD_BR_NFSE_TOP                                           *
+*---------------------------------------------------------------------*
+* Date:                 09.10.2026                                    *
+* Developer:            Renato Santos                                 *
+* IT Responsible:       Renato Santos                                 *
+* Business Responsible: Juliana Reimberg                              *
+*---------------------------------------------------------------------*
+* Functional description                                              *
+* Global declarations shared by ZSD_BR_NFSE_UPLOAD (user) and         *
+* ZSD_BR_NFSE_UPLOAD_ADM (admin): constants, types, global data and   *
+* the definition of the local ALV event handler class.                *
+*---------------------------------------------------------------------*
+* Authorization logic                                                 *
+* None in this include - see FORM CHECK_AUTHORITY (ZSD_BR_NFSE_F01).  *
+*---------------------------------------------------------------------*
+* Change history                                                      *
+* 09.10.2026  Renato Santos                                           *
+* Initial version.                                                    *
+*---------------------------------------------------------------------*
+
+TYPE-POOLS: icon.
+
+* Needed only so the selection screens can declare SELECT-OPTIONS
+* FOR <table>-<field> on the solution's own tables.
+TABLES: zsd_br_nfse_file,
+        zsd_br_nfse_data,
+        zsd_br_nfse_log.
+
+*---------------------------------------------------------------------*
+* Constants
+*---------------------------------------------------------------------*
+CONSTANTS:
+  gc_msgid        TYPE symsgid  VALUE 'ZSD_BR_NFSE_MSG',
+  gc_nr_object    TYPE nrobj    VALUE 'ZNFSE_FILE',
+  gc_nr_range     TYPE nrnr     VALUE '01',
+  gc_tcode_nf     TYPE tcode    VALUE 'J1B1N',
+  gc_tcode_disp   TYPE tcode    VALUE 'J1B3N',
+  gc_parm_view    TYPE tabname  VALUE 'ZSD_BR_NFSE_PARM',
+  gc_lock_table   TYPE tabname  VALUE 'ZSD_BR_NFSE_FILE',
+  gc_currency     TYPE waers    VALUE 'BRL',
+  gc_partner_role TYPE parvw    VALUE 'AG',
+  gc_partner_type TYPE char1    VALUE 'C',
+  gc_direct_out   TYPE char1    VALUE '2',
+  gc_item_number  TYPE j_1bnflin-itmnum VALUE '000010',
+  gc_text_width   TYPE i        VALUE 72,
+  gc_header_row   TYPE i        VALUE 2,     " Excel row holding the column names
+  gc_first_row    TYPE i        VALUE 3,     " first Excel row holding data
+  gc_last_column  TYPE i        VALUE 54,    " A .. BB
+  gc_rps_max_len  TYPE i        VALUE 6,     " J_1BNFDOC-NFNUM length
+  gc_docsta_auth  TYPE char1    VALUE '1',   " J_1BNFE_ACTIVE-DOCSTA: authorized
+  gc_yes          TYPE char1    VALUE 'S',   " Yes/No flags as they come from the spreadsheet
+  gc_no           TYPE char1    VALUE 'N',
+  gc_wildcard     TYPE char1    VALUE '*'.
+
+* Line status (domain ZSD_BR_NFSE_LINE_STATUS)
+CONSTANTS:
+  gc_line_new       TYPE char1 VALUE ' ',
+  gc_line_success   TYPE char1 VALUE 'S',
+  gc_line_error     TYPE char1 VALUE 'E',
+  gc_line_validated TYPE char1 VALUE 'V'.
+
+* File status (domain ZSD_BR_NFSE_FILE_STATUS)
+CONSTANTS:
+  gc_file_success TYPE char1 VALUE 'S',
+  gc_file_partial TYPE char1 VALUE 'P',
+  gc_file_error   TYPE char1 VALUE 'E'.
+
+* Message types written to ZSD_BR_NFSE_LOG
+CONSTANTS:
+  gc_msgty_error   TYPE symsgty VALUE 'E',
+  gc_msgty_warning TYPE symsgty VALUE 'W',
+  gc_msgty_success TYPE symsgty VALUE 'S',
+  gc_msgty_info    TYPE symsgty VALUE 'I'.
+
+* Parameter names in ZSD_BR_NFSE_PARM-FIELD_NAME
+CONSTANTS:
+  gc_p_sheet_name    TYPE fieldname VALUE 'SHEET_NAME',
+  gc_p_max_lines     TYPE fieldname VALUE 'MAX_LINES',
+  gc_p_iss_tolerance TYPE fieldname VALUE 'ISS_TOLERANCE',
+  gc_p_send_cbs_ibs  TYPE fieldname VALUE 'SEND_CBS_IBS',
+  gc_p_taxgrp_req_01 TYPE fieldname VALUE 'TAXGRP_REQ_01',
+  gc_p_taxgrp_req_02 TYPE fieldname VALUE 'TAXGRP_REQ_02',
+  gc_p_taxgrp_req_03 TYPE fieldname VALUE 'TAXGRP_REQ_03',
+  gc_p_retention     TYPE fieldname VALUE 'LOG_RETENTION_YEARS',
+  gc_p_matnr         TYPE fieldname VALUE 'MATNR',
+  gc_p_kunnr         TYPE fieldname VALUE 'KUNNR',
+  gc_p_cfop          TYPE fieldname VALUE 'CFOP',
+  gc_p_werks         TYPE fieldname VALUE 'WERKS',
+  gc_p_itmtyp        TYPE fieldname VALUE 'ITMTYP',
+  gc_p_matuse        TYPE fieldname VALUE 'MATUSE',
+  gc_p_matorg        TYPE fieldname VALUE 'MATORG',
+  gc_p_taxlw1        TYPE fieldname VALUE 'TAXLW1',
+  gc_p_taxlw2        TYPE fieldname VALUE 'TAXLW2',
+  gc_p_taxlw3        TYPE fieldname VALUE 'TAXLW3',
+  gc_p_taxlw4        TYPE fieldname VALUE 'TAXLW4',
+  gc_p_taxlw5        TYPE fieldname VALUE 'TAXLW5',
+  gc_p_cclasstrib    TYPE fieldname VALUE 'CCLASSTRIB',
+  gc_p_taxtyp_iss    TYPE fieldname VALUE 'TAXTYP_ISS',
+  gc_p_taxtyp_cbs    TYPE fieldname VALUE 'TAXTYP_CBS',
+  gc_p_taxtyp_ibs    TYPE fieldname VALUE 'TAXTYP_IBS',
+  gc_p_taxtyp_inss   TYPE fieldname VALUE 'TAXTYP_INSS',
+  gc_p_taxtyp_irrf   TYPE fieldname VALUE 'TAXTYP_IRRF',
+  gc_p_taxtyp_csll   TYPE fieldname VALUE 'TAXTYP_CSLL',
+  gc_p_taxtyp_cbs_wt TYPE fieldname VALUE 'TAXTYP_CBS_WHT',
+  gc_p_taxtyp_ibs_wt TYPE fieldname VALUE 'TAXTYP_IBS_WHT',
+  gc_p_rps_series    TYPE fieldname VALUE 'RPS_SERIES',
+  gc_p_srv_descr     TYPE fieldname VALUE 'SRV_DESCRIPTION',
+  gc_p_rm_accents    TYPE fieldname VALUE 'CSV_REMOVE_ACCENTS',
+  gc_p_prv_mun_reg   TYPE fieldname VALUE 'PRV_MUN_REG',
+  gc_p_prv_tax_id    TYPE fieldname VALUE 'PRV_TAX_ID',
+  gc_p_prv_name      TYPE fieldname VALUE 'PRV_NAME',
+  gc_p_prv_str_type  TYPE fieldname VALUE 'PRV_STREET_TYPE',
+  gc_p_prv_street    TYPE fieldname VALUE 'PRV_STREET',
+  gc_p_prv_house_num TYPE fieldname VALUE 'PRV_HOUSE_NUM',
+  gc_p_prv_compl     TYPE fieldname VALUE 'PRV_ADDR_COMPL',
+  gc_p_prv_district  TYPE fieldname VALUE 'PRV_DISTRICT',
+  gc_p_prv_city      TYPE fieldname VALUE 'PRV_CITY',
+  gc_p_prv_region    TYPE fieldname VALUE 'PRV_REGION',
+  gc_p_prv_post_code TYPE fieldname VALUE 'PRV_POSTAL_CODE',
+  gc_p_prv_email     TYPE fieldname VALUE 'PRV_EMAIL'.
+
+* Excel column headers used as FILE_COLUMN_NAME in mapping parameters
+CONSTANTS:
+  gc_col_service_code TYPE zsd_br_nfse_file_column_name
+                      VALUE 'Código do Serviço Prestado na Nota Fiscal',
+  gc_col_codigo_sap   TYPE zsd_br_nfse_file_column_name VALUE 'Codigo SAP',
+  gc_col_taker_region TYPE zsd_br_nfse_file_column_name VALUE 'UF do Tomador',
+  gc_col_iss_wht      TYPE zsd_br_nfse_file_column_name VALUE 'ISS Retido'.
+
+* Default values used when a control parameter is not maintained
+CONSTANTS:
+  gc_def_sheet_name TYPE string VALUE 'Emissão NF - Ductor',
+  gc_def_max_lines  TYPE i      VALUE 500,
+  gc_def_tolerance  TYPE p LENGTH 8 DECIMALS 2 VALUE '0.01',
+  gc_def_retention  TYPE i      VALUE 5.
+
+* Function codes of the custom GUI statuses (copies of SALV_STANDARD)
+CONSTANTS:
+  gc_fc_select_all   TYPE salv_de_function VALUE 'SELALL',
+  gc_fc_deselect_all TYPE salv_de_function VALUE 'DESALL',
+  gc_fc_export       TYPE salv_de_function VALUE 'EXPORT',
+  gc_fc_reprocess    TYPE salv_de_function VALUE 'REPROC'.
+
+* ALV list modes and J1B3N parameter ID
+CONSTANTS:
+  gc_mode_result TYPE char10   VALUE 'RESULT',
+  gc_mode_log    TYPE char10   VALUE 'LOG',
+  gc_mode_export TYPE char10   VALUE 'EXPORT',
+  gc_pid_docnum  TYPE memoryid VALUE 'JEF'.     " parameter ID of J_1BDOCNUM (used by J1B3N)
+
+*---------------------------------------------------------------------*
+* Types
+*---------------------------------------------------------------------*
+TYPES:
+* One expected Excel column: letter, header text, target field
+  BEGIN OF gty_layout,
+    column TYPE string,          " component name in the FDT itab (A, B, ..., BB)
+    header TYPE string,          " expected header text (row 2)
+    field  TYPE fieldname,       " target field in ZSD_BR_NFSE_DATA (initial = ignored)
+  END OF gty_layout,
+  gty_layout_tab TYPE STANDARD TABLE OF gty_layout WITH DEFAULT KEY,
+  gty_fieldname_tab TYPE STANDARD TABLE OF fieldname WITH DEFAULT KEY,
+
+  gty_data_tab  TYPE STANDARD TABLE OF zsd_br_nfse_data WITH DEFAULT KEY,
+  gty_log_tab   TYPE STANDARD TABLE OF zsd_br_nfse_log WITH DEFAULT KEY,
+  gty_file_tab  TYPE STANDARD TABLE OF zsd_br_nfse_file WITH DEFAULT KEY,
+  gty_param_tab TYPE SORTED TABLE OF zsd_br_nfse_parm
+                WITH UNIQUE KEY bukrs field_name file_column_name input,
+
+* Next free log item per line, so new messages never collide with old ones
+  BEGIN OF gty_log_counter,
+    file_id  TYPE zsd_br_nfse_file_id,
+    line_id  TYPE zsd_br_nfse_line_id,
+    log_item TYPE zsd_br_nfse_log_item,
+  END OF gty_log_counter,
+  gty_log_counter_tab TYPE HASHED TABLE OF gty_log_counter
+                      WITH UNIQUE KEY file_id line_id,
+
+* Customer master buffer (KNA1 + KNB1 for the selected company code)
+  BEGIN OF gty_customer,
+    kunnr      TYPE kunnr,
+    stcd1      TYPE kna1-stcd1,
+    stcd2      TYPE kna1-stcd2,
+    stcd3      TYPE kna1-stcd3,
+    ort01      TYPE kna1-ort01,
+    regio      TYPE kna1-regio,
+    sperr      TYPE kna1-sperr,
+    loevm      TYPE kna1-loevm,
+    in_bukrs   TYPE abap_bool,
+    sperr_bukrs TYPE knb1-sperr,
+    loevm_bukrs TYPE knb1-loevm,
+  END OF gty_customer,
+  gty_customer_tab TYPE HASHED TABLE OF gty_customer WITH UNIQUE KEY kunnr,
+
+* Material buffer (MARA + MARC for the plant used in the NF)
+  BEGIN OF gty_material,
+    matnr    TYPE matnr,
+    meins    TYPE mara-meins,
+    lvorm    TYPE mara-lvorm,
+    in_plant TYPE abap_bool,
+    maktx    TYPE makt-maktx,
+  END OF gty_material,
+  gty_material_tab TYPE HASHED TABLE OF gty_material WITH UNIQUE KEY matnr,
+
+* One duplicate found before NF creation (popup + log)
+  BEGIN OF gty_duplicate,
+    line_id       TYPE zsd_br_nfse_line_id,
+    kunnr         TYPE kunnr,
+    rps_number    TYPE zsd_br_nfse_rps_number,
+    amount        TYPE zsd_br_nfse_service_amount,
+    waers         TYPE waers,
+    criterion     TYPE char1,                     " A = RPS, B = content
+    prev_file_id  TYPE zsd_br_nfse_file_id,
+    prev_line_id  TYPE zsd_br_nfse_line_id,
+    prev_docnum   TYPE j_1bdocnum,
+    prev_docdat   TYPE j_1bnfdoc-docdat,
+  END OF gty_duplicate,
+  gty_duplicate_tab TYPE STANDARD TABLE OF gty_duplicate WITH DEFAULT KEY,
+
+* ALV output line - result, log and export lists share this layout
+  BEGIN OF gty_alv,
+    sel           TYPE abap_bool,                 " export list: line ticked
+    file_icon     TYPE icon_d,
+    line_icon     TYPE icon_d,
+    export_icon   TYPE icon_d,
+    file_status   TYPE zsd_br_nfse_file_status,
+    file_name     TYPE zsd_br_nfse_file_name,
+    exec_date     TYPE datum,
+    exec_user     TYPE uname,
+    bukrs         TYPE bukrs,
+    branch        TYPE j_1bbranc_,
+    nfenum        TYPE j_1bnfdoc-nfenum,
+    authcod       TYPE j_1bnfdoc-authcod,
+    authdat       TYPE j_1bnfdoc-authdat,
+    authtime      TYPE j_1bnfdoc-authtime,
+    nfse_state    TYPE char40,                    " export list: authorization state text
+    cancelled     TYPE j_1bnfdoc-cancel,
+    situation     TYPE char1,                     " T = within São Paulo, F = outside
+    msg_count     TYPE i,
+    has_warning   TYPE abap_bool,
+    message       TYPE bapi_msg,
+    exportable    TYPE abap_bool,
+    t_color       TYPE lvc_t_scol.
+    INCLUDE TYPE zsd_br_nfse_data.
+TYPES:
+  END OF gty_alv,
+  gty_alv_tab TYPE STANDARD TABLE OF gty_alv WITH DEFAULT KEY.
+
+*---------------------------------------------------------------------*
+* Global data
+*---------------------------------------------------------------------*
+DATA:
+  gv_is_admin    TYPE abap_bool,          " set in INITIALIZATION of each main program
+  gv_alv_mode    TYPE char10,
+  gv_send_cbs    TYPE abap_bool,
+  gv_werks       TYPE werks_d,
+  gv_iss_tol     TYPE p LENGTH 8 DECIMALS 2,
+  gs_file        TYPE zsd_br_nfse_file,
+  gs_j1baa       TYPE j_1baa,
+  gt_layout      TYPE gty_layout_tab,
+  gt_data        TYPE gty_data_tab,
+  gt_log         TYPE gty_log_tab,        " messages not yet written to the database
+  gt_log_counter TYPE gty_log_counter_tab,
+  gt_param       TYPE gty_param_tab,
+  gt_customer    TYPE gty_customer_tab,
+  gt_material    TYPE gty_material_tab,
+  gt_duplicate   TYPE gty_duplicate_tab,
+  gt_alv         TYPE gty_alv_tab,
+  go_alv         TYPE REF TO cl_salv_table,
+* Customer data for the output file (option 3)
+  gt_exp_kna1    TYPE HASHED TABLE OF kna1 WITH UNIQUE KEY kunnr,
+  gt_exp_adrc    TYPE SORTED TABLE OF adrc WITH NON-UNIQUE KEY addrnumber,
+  gt_exp_adr6    TYPE SORTED TABLE OF adr6 WITH NON-UNIQUE KEY addrnumber.
+
+*---------------------------------------------------------------------*
+* Local class: ALV event handler (implementation in ZSD_BR_NFSE_ALV)
+*---------------------------------------------------------------------*
+CLASS lcl_alv_events DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS:
+      on_link_click FOR EVENT link_click OF cl_salv_events_table
+        IMPORTING row column,
+      on_double_click FOR EVENT double_click OF cl_salv_events_table
+        IMPORTING row column,
+      on_user_command FOR EVENT added_function OF cl_salv_events
+        IMPORTING e_salv_function.
+ENDCLASS.

@@ -1,0 +1,70 @@
+*---------------------------------------------------------------------*
+* Include   ZSD_BR_NFSE_SCR                                           *
+*---------------------------------------------------------------------*
+* Date:                 09.10.2026                                    *
+* Developer:            Renato Santos                                 *
+* IT Responsible:       Renato Santos                                 *
+* Business Responsible: Juliana Reimberg                              *
+*---------------------------------------------------------------------*
+* Functional description                                              *
+* Selection screen of the user program ZSD_BR_NFSE_UPLOAD:            *
+*   1 - Process upload and create NF Writer                           *
+*   2 - Display execution log                                         *
+*   3 - Generate output file (CSV)                                    *
+* The radio group drives which common block (ZSD_BR_NFSE_SCR_COM) is  *
+* shown. The issue date is display only here.                         *
+*---------------------------------------------------------------------*
+* Authorization logic                                                 *
+* Checked on Execute - see FORM CHECK_SELECTION_SCREEN / F01.         *
+*---------------------------------------------------------------------*
+* Change history                                                      *
+* 09.10.2026  Renato Santos                                           *
+* Initial version.                                                    *
+*---------------------------------------------------------------------*
+
+SELECTION-SCREEN BEGIN OF BLOCK b_opt WITH FRAME TITLE TEXT-b01.
+  PARAMETERS:
+    p_rupl RADIOBUTTON GROUP opt DEFAULT 'X' USER-COMMAND opt,
+    p_rlog RADIOBUTTON GROUP opt,
+    p_rexp RADIOBUTTON GROUP opt.
+SELECTION-SCREEN END OF BLOCK b_opt.
+
+INCLUDE zsd_br_nfse_scr_com.
+
+*---------------------------------------------------------------------*
+INITIALIZATION.
+*---------------------------------------------------------------------*
+  gv_is_admin = abap_false.
+  PERFORM set_screen_defaults.
+
+*---------------------------------------------------------------------*
+AT SELECTION-SCREEN OUTPUT.
+*---------------------------------------------------------------------*
+  LOOP AT SCREEN.
+    CASE screen-group1.
+      WHEN 'UPL'.
+        screen-active = COND #( WHEN p_rupl = abap_true THEN 1 ELSE 0 ).
+      WHEN 'DOC'.
+        screen-active = COND #( WHEN p_rupl = abap_true THEN 1 ELSE 0 ).
+        screen-input  = 0.                   " users always issue with today's date
+      WHEN 'LOG'.
+        screen-active = COND #( WHEN p_rlog = abap_true THEN 1 ELSE 0 ).
+      WHEN 'EXP'.
+        screen-active = COND #( WHEN p_rexp = abap_true THEN 1 ELSE 0 ).
+    ENDCASE.
+    MODIFY SCREEN.
+  ENDLOOP.
+
+*---------------------------------------------------------------------*
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+*---------------------------------------------------------------------*
+  PERFORM f4_file CHANGING p_file.
+
+*---------------------------------------------------------------------*
+AT SELECTION-SCREEN.
+*---------------------------------------------------------------------*
+* Users cannot change the issue date, not even through a variant
+  p_docdat = sy-datum.
+  IF sy-ucomm = 'ONLI'.
+    PERFORM check_selection_screen.
+  ENDIF.

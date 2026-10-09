@@ -1,0 +1,51 @@
+*---------------------------------------------------------------------*
+* Report    ZSD_BR_NFSE_UPLOAD_ADM                                    *
+*---------------------------------------------------------------------*
+* Date:                 09.10.2026                                    *
+* Developer:            Renato Santos                                 *
+* IT Responsible:       Renato Santos                                 *
+* Business Responsible: Juliana Reimberg                              *
+*---------------------------------------------------------------------*
+* Functional description                                              *
+* NFS-e upload - admin program (transaction ZNFSE_ADM). Same options  *
+* 1 to 3 as ZSD_BR_NFSE_UPLOAD (same includes), plus:                 *
+*   - issue date editable in option 1 (month-end closing)             *
+*   - "Reprocess errors" button in the execution log                  *
+*   4 - Maintain parameters (ZSD_BR_NFSE_PARM)                        *
+*   5 - Purge old logs (LGPD), simulation by default                  *
+* Functional specification: ZSD_BR_NFSE_Design.md (repository TUV).   *
+*---------------------------------------------------------------------*
+* Authorization logic                                                 *
+* Access restricted by transaction ZNFSE_ADM (role for key users).    *
+*   options 1 to 3 and reprocessing - as ZSD_BR_NFSE_UPLOAD           *
+*   option 4 - S_TABU_DIS (authorization group of the table)          *
+*   option 5 - F_BKPF_BUK (BUKRS, ACTVT 06)                           *
+*---------------------------------------------------------------------*
+* Change history                                                      *
+* 09.10.2026  Renato Santos                                           *
+* Initial version.                                                    *
+*---------------------------------------------------------------------*
+REPORT zsd_br_nfse_upload_adm MESSAGE-ID zsd_br_nfse_msg.
+
+INCLUDE zsd_br_nfse_top.
+INCLUDE zsd_br_nfse_scr_adm.
+INCLUDE zsd_br_nfse_f01.
+INCLUDE zsd_br_nfse_f02_adm.
+INCLUDE zsd_br_nfse_f03.
+INCLUDE zsd_br_nfse_alv.
+
+*---------------------------------------------------------------------*
+START-OF-SELECTION.
+*---------------------------------------------------------------------*
+  CASE abap_true.
+    WHEN p_rupl.
+      PERFORM process_upload.
+    WHEN p_rlog.
+      PERFORM display_log.
+    WHEN p_rexp.
+      PERFORM display_export.
+    WHEN p_rparm.
+      PERFORM maintain_params.
+    WHEN p_rpurg.
+      PERFORM process_purge.
+  ENDCASE.

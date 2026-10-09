@@ -1,0 +1,52 @@
+*---------------------------------------------------------------------*
+* Report    ZSD_BR_NFSE_UPLOAD                                        *
+*---------------------------------------------------------------------*
+* Date:                 09.10.2026                                    *
+* Developer:            Renato Santos                                 *
+* IT Responsible:       Renato Santos                                 *
+* Business Responsible: Juliana Reimberg                              *
+*---------------------------------------------------------------------*
+* Functional description                                              *
+* NFS-e upload - user program (transaction ZNFSE).                    *
+*   1 - Reads the NFS-e issuing workbook (sheet "Emissão NF -         *
+*       Ductor"), stores file and lines in ZSD_BR_NFSE_FILE / _DATA,  *
+*       validates every line, checks duplicates and creates one Nota  *
+*       Fiscal Writer per valid line (BAPI_J_1B_NF_CREATEFROMDATA).   *
+*       RPS of the spreadsheet = J_1BNFDOC-NFNUM.                     *
+*   2 - Execution log (ALV with traffic lights, link to J1B3N).       *
+*   3 - Output file: CSV in the layout of the city portal export,     *
+*       for NFs whose NFS-e was authorized (J1BNFE).                  *
+* Parameters: table ZSD_BR_NFSE_PARM (admin program ZNFSE_ADM).       *
+* Functional specification: ZSD_BR_NFSE_Design.md (repository TUV).   *
+*---------------------------------------------------------------------*
+* Authorization logic                                                 *
+* Same check as the standard transaction J1B1N:                       *
+*   option 1     - F_BKPF_BUK (BUKRS, ACTVT 01) + S_TCODE J1B1N       *
+*   options 2, 3 - F_BKPF_BUK (BUKRS, ACTVT 03) per company code      *
+*   J1B3N link   - CALL TRANSACTION ... WITH AUTHORITY-CHECK          *
+* The issue date cannot be changed here (always today).               *
+*---------------------------------------------------------------------*
+* Change history                                                      *
+* 09.10.2026  Renato Santos                                           *
+* Initial version.                                                    *
+*---------------------------------------------------------------------*
+REPORT zsd_br_nfse_upload MESSAGE-ID zsd_br_nfse_msg.
+
+INCLUDE zsd_br_nfse_top.
+INCLUDE zsd_br_nfse_scr.
+INCLUDE zsd_br_nfse_f01.
+INCLUDE zsd_br_nfse_f03.
+INCLUDE zsd_br_nfse_alv.
+
+*---------------------------------------------------------------------*
+START-OF-SELECTION.
+*---------------------------------------------------------------------*
+  CASE abap_true.
+    WHEN p_rupl.
+      p_docdat = sy-datum.                 " users always issue with today's date
+      PERFORM process_upload.
+    WHEN p_rlog.
+      PERFORM display_log.
+    WHEN p_rexp.
+      PERFORM display_export.
+  ENDCASE.

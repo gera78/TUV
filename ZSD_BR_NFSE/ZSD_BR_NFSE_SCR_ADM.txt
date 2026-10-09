@@ -1,0 +1,86 @@
+*---------------------------------------------------------------------*
+* Include   ZSD_BR_NFSE_SCR_ADM                                       *
+*---------------------------------------------------------------------*
+* Date:                 09.10.2026                                    *
+* Developer:            Renato Santos                                 *
+* IT Responsible:       Renato Santos                                 *
+* Business Responsible: Juliana Reimberg                              *
+*---------------------------------------------------------------------*
+* Functional description                                              *
+* Selection screen of the admin program ZSD_BR_NFSE_UPLOAD_ADM:       *
+*   1 - Process upload and create NF Writer (issue date editable)     *
+*   2 - Display execution log (with "Reprocess errors" in the ALV)    *
+*   3 - Generate output file (CSV)                                    *
+*   4 - Maintain parameters (ZSD_BR_NFSE_PARM)                        *
+*   5 - Purge old logs (LGPD)                                         *
+*---------------------------------------------------------------------*
+* Authorization logic                                                 *
+* Access is restricted by transaction ZNFSE_ADM. Company-code checks  *
+* run on Execute - see CHECK_SELECTION_SCREEN / CHECK_PURGE_SCREEN.   *
+*---------------------------------------------------------------------*
+* Change history                                                      *
+* 09.10.2026  Renato Santos                                           *
+* Initial version.                                                    *
+*---------------------------------------------------------------------*
+
+SELECTION-SCREEN BEGIN OF BLOCK b_opt WITH FRAME TITLE TEXT-b01.
+  PARAMETERS:
+    p_rupl  RADIOBUTTON GROUP opt DEFAULT 'X' USER-COMMAND opt,
+    p_rlog  RADIOBUTTON GROUP opt,
+    p_rexp  RADIOBUTTON GROUP opt,
+    p_rparm RADIOBUTTON GROUP opt,
+    p_rpurg RADIOBUTTON GROUP opt.
+SELECTION-SCREEN END OF BLOCK b_opt.
+
+INCLUDE zsd_br_nfse_scr_com.
+
+*---------------------------------------------------------------------*
+* Option 5 - Purge old logs
+*---------------------------------------------------------------------*
+SELECTION-SCREEN BEGIN OF BLOCK b_prg WITH FRAME TITLE TEXT-b05.
+  PARAMETERS:
+    p_pbukrs TYPE bukrs DEFAULT '5596' MODIF ID prg,
+    p_pdate  TYPE datum               MODIF ID prg,
+    p_ptest  AS CHECKBOX DEFAULT 'X'  MODIF ID prg.
+SELECTION-SCREEN END OF BLOCK b_prg.
+
+*---------------------------------------------------------------------*
+INITIALIZATION.
+*---------------------------------------------------------------------*
+  gv_is_admin = abap_true.
+  PERFORM set_screen_defaults.
+  PERFORM set_purge_default_date USING p_pbukrs CHANGING p_pdate.
+
+*---------------------------------------------------------------------*
+AT SELECTION-SCREEN OUTPUT.
+*---------------------------------------------------------------------*
+  LOOP AT SCREEN.
+    CASE screen-group1.
+      WHEN 'UPL' OR 'DOC'.                   " issue date stays editable for admins
+        screen-active = COND #( WHEN p_rupl = abap_true THEN 1 ELSE 0 ).
+      WHEN 'LOG'.
+        screen-active = COND #( WHEN p_rlog = abap_true THEN 1 ELSE 0 ).
+      WHEN 'EXP'.
+        screen-active = COND #( WHEN p_rexp = abap_true THEN 1 ELSE 0 ).
+      WHEN 'PRG'.
+        screen-active = COND #( WHEN p_rpurg = abap_true THEN 1 ELSE 0 ).
+    ENDCASE.
+    MODIFY SCREEN.
+  ENDLOOP.
+
+*---------------------------------------------------------------------*
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+*---------------------------------------------------------------------*
+  PERFORM f4_file CHANGING p_file.
+
+*---------------------------------------------------------------------*
+AT SELECTION-SCREEN.
+*---------------------------------------------------------------------*
+  IF sy-ucomm = 'ONLI'.
+    CASE abap_true.
+      WHEN p_rupl OR p_rlog OR p_rexp.
+        PERFORM check_selection_screen.
+      WHEN p_rpurg.
+        PERFORM check_purge_screen USING p_pbukrs p_pdate.
+    ENDCASE.
+  ENDIF.

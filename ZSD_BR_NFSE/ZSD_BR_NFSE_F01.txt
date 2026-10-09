@@ -1,0 +1,2012 @@
+*---------------------------------------------------------------------*
+* Include   ZSD_BR_NFSE_F01                                           *
+*---------------------------------------------------------------------*
+* Date:                 09.10.2026                                    *
+* Developer:            Renato Santos                                 *
+* IT Responsible:       Renato Santos                                 *
+* Business Responsible: Juliana Reimberg                              *
+*---------------------------------------------------------------------*
+* Functional description                                              *
+* Forms shared by the user and admin programs for option 1:           *
+*   screen checks, Excel upload (CL_FDT_XL_SPREADSHEET), storage in   *
+*   ZSD_BR_NFSE_FILE / _DATA, line validations, duplicate check,      *
+*   NF Writer creation (BAPI_J_1B_NF_CREATEFROMDATA), file status and *
+*   log handling (ZSD_BR_NFSE_LOG).                                   *
+* Rule: the file and its lines are stored BEFORE validation, so every *
+* error ends up in the log. Status S and DOCNUM are written in the    *
+* same LUW as BAPI_TRANSACTION_COMMIT - an NF never exists without    *
+* its log entry.                                                      *
+*---------------------------------------------------------------------*
+* Authorization logic                                                 *
+* Same check as the standard transaction J1B1N:                       *
+*   F_BKPF_BUK (BUKRS, ACTVT 01) + S_TCODE J1B1N  - option 1          *
+*   F_BKPF_BUK (BUKRS, ACTVT 03)                  - options 2 and 3   *
+* See FORM CHECK_AUTHORITY / AUTHORITY_OK.                            *
+*---------------------------------------------------------------------*
+* Change history                                                      *
+* 09.10.2026  Renato Santos                                           *
+* Initial version.                                                    *
+*---------------------------------------------------------------------*
+
+*&---------------------------------------------------------------------*
+*&      Form  SET_SCREEN_DEFAULTS
+*&---------------------------------------------------------------------*
+* Default values that cannot be expressed with DEFAULT on the screen:
+* log and export selections start with the default company code /
+* business place and the log shows the last 30 days.
+*----------------------------------------------------------------------*
+FORM set_screen_defaults.
+
+  s_lbukrs = VALUE #( sign = 'I' option = 'EQ' low = p_bukrs ).
+  APPEND s_lbukrs.
+  s_ldate = VALUE #( sign = 'I' option = 'BT' low = sy-datum - 30 high = sy-datum ).
+  APPEND s_ldate.
+  s_xbukrs = VALUE #( sign = 'I' option = 'EQ' low = p_bukrs ).
+  APPEND s_xbukrs.
+  s_xbranc = VALUE #( sign = 'I' option = 'EQ' low = p_branch ).
+  APPEND s_xbranc.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  F4_FILE
+*&---------------------------------------------------------------------*
+* File-open dialog on the user's PC, filtered to Excel workbooks.
+*----------------------------------------------------------------------*
+FORM f4_file CHANGING cv_file TYPE rlgrap-filename.
+
+  DATA: lt_files  TYPE filetable,
+        lv_rc     TYPE i,
+        lv_action TYPE i.
+
+  cl_gui_frontend_services=>file_open_dialog(
+    EXPORTING
+      window_title            = CONV string( TEXT-f01 )
+      file_filter             = 'Excel (*.xlsx;*.xlsm)|*.xlsx;*.xlsm'
+      multiselection          = abap_false
+    CHANGING
+      file_table              = lt_files
+      rc                      = lv_rc
+      user_action             = lv_action
+    EXCEPTIONS
+      OTHERS                  = 1 ).
+  IF sy-subrc = 0 AND lv_action = cl_gui_frontend_services=>action_ok.
+    READ TABLE lt_files INTO DATA(ls_file) INDEX 1.
+    IF sy-subrc = 0.
+      cv_file = ls_file-filename.
+    ENDIF.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_SELECTION_SCREEN
+*&---------------------------------------------------------------------*
+* Required fields and authorization, only when Execute is pressed.
+*----------------------------------------------------------------------*
+FORM check_selection_screen.
+
+  CASE abap_true.
+    WHEN p_rupl.
+      IF p_bukrs IS INITIAL OR p_branch IS INITIAL OR p_nftype IS INITIAL
+         OR p_file IS INITIAL OR p_docdat IS INITIAL.
+        MESSAGE e055(00).                   " Fill in all required entry fields
+      ENDIF.
+      PERFORM check_authority USING p_bukrs '01'.
+      PERFORM check_branch_and_nftype USING p_bukrs p_branch p_nftype.
+    WHEN p_rlog.
+      IF s_lbukrs[] IS INITIAL.
+        MESSAGE e055(00).
+      ENDIF.
+    WHEN p_rexp.
+      IF s_xbukrs[] IS INITIAL.
+        MESSAGE e055(00).
+      ENDIF.
+      IF p_xsitu IS NOT INITIAL AND p_xsitu <> 'T' AND p_xsitu <> 'F'.
+        MESSAGE e055(00).
+      ENDIF.
+  ENDCASE.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_AUTHORITY
+*&---------------------------------------------------------------------*
+* Same check as J1B1N: F_BKPF_BUK on the company code. For creation
+* (ACTVT 01) the user also needs to be allowed to run J1B1N itself.
+* Raises message 021 (type E) and stops when not authorized.
+*----------------------------------------------------------------------*
+FORM check_authority USING uv_bukrs TYPE bukrs
+                           uv_actvt TYPE any.
+
+  DATA lv_ok TYPE abap_bool.
+
+  PERFORM authority_ok USING uv_bukrs uv_actvt CHANGING lv_ok.
+  IF lv_ok = abap_false.
+    MESSAGE e021(zsd_br_nfse_msg) WITH uv_bukrs gc_tcode_nf.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  AUTHORITY_OK
+*&---------------------------------------------------------------------*
+FORM authority_ok USING    uv_bukrs TYPE bukrs
+                           uv_actvt TYPE any
+                  CHANGING cv_ok    TYPE abap_bool.
+
+  cv_ok = abap_false.
+  AUTHORITY-CHECK OBJECT 'F_BKPF_BUK'
+    ID 'BUKRS' FIELD uv_bukrs
+    ID 'ACTVT' FIELD uv_actvt.
+  IF sy-subrc <> 0.
+    RETURN.
+  ENDIF.
+  IF uv_actvt = '01'.
+    AUTHORITY-CHECK OBJECT 'S_TCODE' ID 'TCD' FIELD gc_tcode_nf.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+  ENDIF.
+  cv_ok = abap_true.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_BRANCH_AND_NFTYPE
+*&---------------------------------------------------------------------*
+* 031 - business place must belong to the company code
+* 032 - NF type must be an outgoing NF type (J_1BAA-DIRECT = 2).
+*       "No accounting posting" is a configuration prerequisite of
+*       NF type Z1 (J_1BAA) and is not re-checked here.
+*----------------------------------------------------------------------*
+FORM check_branch_and_nftype USING uv_bukrs  TYPE bukrs
+                                   uv_branch TYPE j_1bbranc_
+                                   uv_nftype TYPE j_1bnftype.
+
+  DATA lv_direct TYPE string.
+
+  SELECT SINGLE branch FROM j_1bbranch
+    WHERE bukrs  = @uv_bukrs
+      AND branch = @uv_branch
+    INTO @DATA(lv_branch).
+  IF sy-subrc <> 0.
+    MESSAGE e031(zsd_br_nfse_msg) WITH uv_branch uv_bukrs.
+  ENDIF.
+
+  SELECT SINGLE * FROM j_1baa WHERE nftype = @uv_nftype INTO @gs_j1baa.
+  IF sy-subrc <> 0.
+    MESSAGE e032(zsd_br_nfse_msg) WITH uv_nftype.
+  ENDIF.
+  PERFORM get_component USING gs_j1baa 'DIRECT' CHANGING lv_direct.
+  IF lv_direct <> gc_direct_out.
+    MESSAGE e032(zsd_br_nfse_msg) WITH uv_nftype.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  PROCESS_UPLOAD
+*&---------------------------------------------------------------------*
+* Option 1 - main flow (see the functional specification, section 4):
+*   read Excel -> layout check -> store file and lines -> validate ->
+*   duplicate check (+ popup) -> create NFs under lock -> file status
+*   -> result ALV.
+*----------------------------------------------------------------------*
+FORM process_upload.
+
+  DATA: lo_rows   TYPE REF TO data,
+        lv_ok     TYPE abap_bool,
+        lv_msgno  TYPE symsgno,
+        lv_v1     TYPE symsgv,
+        lv_v2     TYPE symsgv,
+        lv_cont   TYPE abap_bool,
+        lv_lines  TYPE i.
+
+  CLEAR: gs_file, gt_data, gt_log, gt_log_counter, gt_duplicate.
+
+  gs_file-bukrs     = p_bukrs.
+  gs_file-branch    = p_branch.
+  gs_file-nftype    = p_nftype.
+  gs_file-doc_date  = p_docdat.
+  gs_file-test_run  = p_test.
+  gs_file-exec_user = sy-uname.
+  gs_file-exec_date = sy-datum.
+  gs_file-exec_time = sy-uzeit.
+  PERFORM split_path USING p_file CHANGING gs_file-file_path gs_file-file_name.
+
+  PERFORM load_params USING gs_file-bukrs.
+  PERFORM build_layout.
+
+* 1. Read the workbook; any problem with the file itself ends here
+  PERFORM read_excel USING p_file
+                     CHANGING lo_rows lv_ok lv_msgno lv_v1 lv_v2.
+  IF lv_ok = abap_true.
+    PERFORM check_layout USING lo_rows CHANGING lv_ok lv_msgno lv_v1 lv_v2.
+  ENDIF.
+  IF lv_ok = abap_true.
+    PERFORM map_rows_to_data USING lo_rows.
+    PERFORM get_param_number USING gc_p_max_lines gc_def_max_lines CHANGING lv_lines.
+    IF lines( gt_data ) > lv_lines.
+      lv_ok    = abap_false.
+      lv_msgno = '033'.
+      lv_v1    = |{ lines( gt_data ) }|.
+      lv_v2    = |{ lv_lines }|.
+    ENDIF.
+  ENDIF.
+
+  IF lv_ok = abap_false.
+    CLEAR gt_data.
+    PERFORM save_file.
+    PERFORM add_log USING '000000' gc_msgty_error lv_msgno lv_v1 lv_v2 space.
+    PERFORM update_file_status.
+    PERFORM display_result.
+    RETURN.
+  ENDIF.
+
+* 2. Store file and lines (status blank) before anything else
+  PERFORM save_file.
+
+* 3. Validations
+  PERFORM prefetch_master_data.
+  PERFORM validate_lines.
+  PERFORM save_line_status.
+
+* 4. Duplicates (only lines without errors)
+  PERFORM check_duplicates.
+  IF gt_duplicate IS NOT INITIAL.
+    PERFORM show_duplicates_popup CHANGING lv_cont.
+    IF lv_cont = abap_false.
+      PERFORM cancel_by_user.
+      PERFORM update_file_status.
+      PERFORM display_result.
+      RETURN.
+    ENDIF.
+  ENDIF.
+  PERFORM save_line_status.
+
+* 5. Validate only, or create the NFs
+  IF gs_file-test_run = abap_true.
+    PERFORM mark_validated.
+  ELSE.
+    PERFORM create_nfs.
+  ENDIF.
+
+* 6. File status and result
+  PERFORM update_file_status.
+  PERFORM display_result.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SPLIT_PATH
+*&---------------------------------------------------------------------*
+FORM split_path USING    uv_full TYPE rlgrap-filename
+                CHANGING cv_path TYPE zsd_br_nfse_file_path
+                         cv_name TYPE zsd_br_nfse_file_name.
+
+  DATA lv_full TYPE string.
+
+  lv_full = uv_full.
+  FIND ALL OCCURRENCES OF '\' IN lv_full MATCH OFFSET DATA(lv_off).
+  IF sy-subrc = 0.
+    cv_path = lv_full(lv_off).
+    cv_name = lv_full+lv_off.
+    SHIFT cv_name LEFT BY 1 PLACES.
+  ELSE.
+    cv_name = lv_full.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  BUILD_LAYOUT
+*&---------------------------------------------------------------------*
+* Expected columns of the sheet "Emissão NF - Ductor": letter, header
+* text in row 2 and target field. Column A is checked but not stored.
+* Header texts are compared after NORMALIZE_TEXT (no accents, upper
+* case, trimmed), so "Nacional " matches "NACIONAL".
+*----------------------------------------------------------------------*
+FORM build_layout.
+
+  CLEAR gt_layout.
+  gt_layout = VALUE #(
+    ( column = 'A'  header = 'ULTIMA RPS UTILIZADA'                          field = '' )
+    ( column = 'B'  header = 'Codigo SAP'                                    field = 'KUNNR' )
+    ( column = 'C'  header = 'CR'                                            field = 'CR_CODE' )
+    ( column = 'D'  header = 'Cliente'                                       field = 'CUSTOMER_SHORT_NAME' )
+    ( column = 'E'  header = 'Cidade'                                        field = 'CITY' )
+    ( column = 'F'  header = 'RPS'                                           field = 'RPS_NUMBER' )
+    ( column = 'G'  header = 'Pedido de Compra'                              field = 'PO_NUMBER' )
+    ( column = 'H'  header = 'Data de prestação de serviço'                  field = 'SERVICE_DATE' )
+    ( column = 'I'  header = 'Valor dos Serviços'                            field = 'SERVICE_AMOUNT' )
+    ( column = 'J'  header = 'CBS Devido'                                    field = 'CBS_DUE_AMT' )
+    ( column = 'K'  header = 'IBS Devido'                                    field = 'IBS_DUE_AMT' )
+    ( column = 'L'  header = 'INSS'                                          field = 'INSS_AMT' )
+    ( column = 'M'  header = 'IRRF RETIDO'                                   field = 'IRRF_WHT_AMT' )
+    ( column = 'N'  header = 'CSLL RETIDO'                                   field = 'CSLL_WHT_AMT' )
+    ( column = 'O'  header = 'CBS RETIDO'                                    field = 'CBS_WHT_AMT' )
+    ( column = 'P'  header = 'IBS RETIDO'                                    field = 'IBS_WHT_AMT' )
+    ( column = 'Q'  header = 'ISS RETIDO/DEVIDO'                             field = 'ISS_AMT' )
+    ( column = 'R'  header = 'Alíquota'                                      field = 'ISS_RATE' )
+    ( column = 'S'  header = 'ISS Retido'                                    field = 'ISS_WHT_FLAG' )
+    ( column = 'T'  header = 'Prestação de Serviço fora de São Paulo'        field = 'OUTSIDE_SP_FLAG' )
+    ( column = 'U'  header = 'Código do Serviço Prestado na Nota Fiscal'     field = 'SERVICE_CODE' )
+    ( column = 'V'  header = 'Município da Prestação do Serviço'             field = 'SERVICE_CITY_CODE' )
+    ( column = 'W'  header = 'UF'                                            field = 'SERVICE_REGION' )
+    ( column = 'X'  header = 'CPF/CNPJ do Tomador'                           field = 'TAKER_TAX_ID' )
+    ( column = 'Y'  header = 'Inscrição Municipal do Tomador'                field = 'TAKER_MUN_REG' )
+    ( column = 'Z'  header = 'Razão Social do Tomador'                       field = 'TAKER_NAME' )
+    ( column = 'AA' header = 'Tipo do Endereço do Tomador'                   field = 'TAKER_STREET_TYPE' )
+    ( column = 'AB' header = 'Endereço do Tomador'                           field = 'TAKER_STREET' )
+    ( column = 'AC' header = 'Número do Endereço do Tomador'                 field = 'TAKER_HOUSE_NUM' )
+    ( column = 'AD' header = 'Bairro do Tomador'                             field = 'TAKER_DISTRICT' )
+    ( column = 'AE' header = 'Cidade do Tomador'                             field = 'TAKER_CITY' )
+    ( column = 'AF' header = 'UF do Tomador'                                 field = 'TAKER_REGION' )
+    ( column = 'AG' header = 'CEP do Tomador'                                field = 'TAKER_POSTAL_CODE' )
+    ( column = 'AH' header = 'Discriminação dos Serviços'                    field = 'SERVICE_DESCRIPTION' )
+    ( column = 'AI' header = 'CPF/CNPJ/NIF/S NIF'                            field = 'RCP_TAX_ID' )
+    ( column = 'AJ' header = 'Nome'                                          field = 'RCP_NAME' )
+    ( column = 'AK' header = 'Email'                                         field = 'RCP_EMAIL' )
+    ( column = 'AL' header = 'Endereço'                                      field = 'RCP_ADDRESS' )
+    ( column = 'AM' header = 'Nacional/Exterior'                             field = 'RCP_NAT_FOREIGN' )
+    ( column = 'AN' header = 'Logradouro'                                    field = 'RCP_STREET' )
+    ( column = 'AO' header = 'Número'                                        field = 'RCP_HOUSE_NUM' )
+    ( column = 'AP' header = 'Complemento'                                   field = 'RCP_ADDR_COMPL' )
+    ( column = 'AQ' header = 'Bairro'                                        field = 'RCP_DISTRICT' )
+    ( column = 'AR' header = 'CIB/CNO'                                       field = 'SITE_CIB_CNO' )
+    ( column = 'AS' header = 'Nacional'                                      field = 'SITE_NATIONAL' )
+    ( column = 'AT' header = 'CEP'                                           field = 'SITE_POSTAL_CODE' )
+    ( column = 'AU' header = 'Logradouro'                                    field = 'SITE_STREET' )
+    ( column = 'AV' header = 'Número'                                        field = 'SITE_HOUSE_NUM' )
+    ( column = 'AW' header = 'Complemento'                                   field = 'SITE_ADDR_COMPL' )
+    ( column = 'AX' header = 'Bairro'                                        field = 'SITE_DISTRICT' )
+    ( column = 'AY' header = 'Código de Classificação Tributária Principal'  field = 'TAX_CLASS_MAIN' )
+    ( column = 'AZ' header = 'Código do Indicador de Operação'               field = 'OPER_IND_CODE' )
+    ( column = 'BA' header = 'Código NBS'                                    field = 'NBS_CODE' )
+    ( column = 'BB' header = 'Código de Classificação Tributária Regular'    field = 'TAX_CLASS_REG' ) ).
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  READ_EXCEL
+*&---------------------------------------------------------------------*
+* Uploads the workbook as binary and reads the worksheet named in
+* parameter SHEET_NAME with CL_FDT_XL_SPREADSHEET (no 50-character
+* cell limit, sheet chosen by name). Returns a reference to a table
+* whose components are the column letters A, B, ... as strings.
+* 018 - file cannot be read or worksheet not found.
+*----------------------------------------------------------------------*
+FORM read_excel USING    uv_file  TYPE rlgrap-filename
+                CHANGING co_rows  TYPE REF TO data
+                         cv_ok    TYPE abap_bool
+                         cv_msgno TYPE symsgno
+                         cv_v1    TYPE symsgv
+                         cv_v2    TYPE symsgv.
+
+  DATA: lt_bin      TYPE solix_tab,
+        lv_size     TYPE i,
+        lv_xstring  TYPE xstring,
+        lv_sheet    TYPE string,
+        lv_wanted   TYPE string,
+        lv_name     TYPE string,
+        lt_sheets   TYPE if_fdt_doc_spreadsheet=>t_worksheet_names,
+        lo_excel    TYPE REF TO cl_fdt_xl_spreadsheet.
+
+  cv_ok    = abap_false.
+  cv_msgno = '018'.
+  cv_v1    = gs_file-file_name.
+
+  PERFORM get_param_text USING gc_p_sheet_name gc_def_sheet_name CHANGING lv_sheet.
+  cv_v2 = lv_sheet.
+
+  cl_gui_frontend_services=>gui_upload(
+    EXPORTING
+      filename   = CONV string( uv_file )
+      filetype   = 'BIN'
+    IMPORTING
+      filelength = lv_size
+    CHANGING
+      data_tab   = lt_bin
+    EXCEPTIONS
+      OTHERS     = 1 ).
+  IF sy-subrc <> 0.
+    RETURN.
+  ENDIF.
+  lv_xstring = cl_bcs_convert=>solix_to_xstring( it_solix = lt_bin iv_size = lv_size ).
+
+  TRY.
+      CREATE OBJECT lo_excel
+        EXPORTING
+          document_name = CONV string( gs_file-file_name )
+          xdocument     = lv_xstring.
+      lo_excel->if_fdt_doc_spreadsheet~get_worksheet_names(
+        IMPORTING worksheet_names = lt_sheets ).
+
+*     Match the worksheet name ignoring accents / case
+      PERFORM normalize_text USING lv_sheet CHANGING lv_wanted.
+      LOOP AT lt_sheets INTO DATA(lv_ws).
+        PERFORM normalize_text USING lv_ws CHANGING lv_name.
+        IF lv_name = lv_wanted.
+          co_rows = lo_excel->if_fdt_doc_spreadsheet~get_itab_from_worksheet( lv_ws ).
+          EXIT.
+        ENDIF.
+      ENDLOOP.
+    CATCH cx_root.                                     "#EC CATCH_ALL
+*     Any parser problem means the file is not a readable workbook
+      RETURN.
+  ENDTRY.
+
+  IF co_rows IS BOUND.
+    cv_ok = abap_true.
+    CLEAR: cv_msgno, cv_v1, cv_v2.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_LAYOUT
+*&---------------------------------------------------------------------*
+* 001 - row 2 must hold the expected header in every column A .. BB.
+*       Reports the first column that differs.
+*----------------------------------------------------------------------*
+FORM check_layout USING    uo_rows  TYPE REF TO data
+                  CHANGING cv_ok    TYPE abap_bool
+                           cv_msgno TYPE symsgno
+                           cv_v1    TYPE symsgv
+                           cv_v2    TYPE symsgv.
+
+  FIELD-SYMBOLS: <lt_rows> TYPE STANDARD TABLE,
+                 <ls_row>  TYPE any,
+                 <lv_cell> TYPE any.
+  DATA: lv_found    TYPE string,
+        lv_expected TYPE string.
+
+  cv_ok = abap_false.
+  cv_msgno = '001'.
+  ASSIGN uo_rows->* TO <lt_rows>.
+  READ TABLE <lt_rows> ASSIGNING <ls_row> INDEX gc_header_row.
+  IF sy-subrc <> 0.
+    cv_v1 = 'A'.
+    cv_v2 = gt_layout[ 1 ]-header.
+    RETURN.
+  ENDIF.
+
+  LOOP AT gt_layout INTO DATA(ls_layout).
+    ASSIGN COMPONENT ls_layout-column OF STRUCTURE <ls_row> TO <lv_cell>.
+    IF sy-subrc = 0.
+      PERFORM normalize_text USING <lv_cell> CHANGING lv_found.
+    ELSE.
+      CLEAR lv_found.
+    ENDIF.
+    PERFORM normalize_text USING ls_layout-header CHANGING lv_expected.
+    IF lv_found <> lv_expected.
+      cv_v1 = ls_layout-column.
+      cv_v2 = ls_layout-header.
+      RETURN.
+    ENDIF.
+  ENDLOOP.
+
+  cv_ok = abap_true.
+  CLEAR: cv_msgno, cv_v1, cv_v2.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  MAP_ROWS_TO_DATA
+*&---------------------------------------------------------------------*
+* Converts every data row (from row 3) into ZSD_BR_NFSE_DATA. A row is
+* taken only when column B (Codigo SAP) is filled - this skips the
+* template rows with zeroed formulas at the end of the sheet.
+* LINE_ID = Excel row number, for traceability.
+*----------------------------------------------------------------------*
+FORM map_rows_to_data USING uo_rows TYPE REF TO data.
+
+  FIELD-SYMBOLS: <lt_rows>  TYPE STANDARD TABLE,
+                 <ls_row>   TYPE any,
+                 <lv_cell>  TYPE any,
+                 <lv_field> TYPE any.
+  DATA: ls_data TYPE zsd_br_nfse_data,
+        lv_cell TYPE string.
+
+  ASSIGN uo_rows->* TO <lt_rows>.
+  LOOP AT <lt_rows> ASSIGNING <ls_row> FROM gc_first_row.
+    DATA(lv_row) = sy-tabix.
+
+    ASSIGN COMPONENT 'B' OF STRUCTURE <ls_row> TO <lv_cell>.
+    IF sy-subrc <> 0 OR condense( CONV string( <lv_cell> ) ) IS INITIAL
+       OR condense( CONV string( <lv_cell> ) ) = '0'.
+      CONTINUE.
+    ENDIF.
+
+    CLEAR ls_data.
+    ls_data-line_id = lv_row.
+    ls_data-status  = gc_line_new.
+    ls_data-waers   = gc_currency.
+
+    LOOP AT gt_layout INTO DATA(ls_layout) WHERE field IS NOT INITIAL.
+      ASSIGN COMPONENT ls_layout-column OF STRUCTURE <ls_row> TO <lv_cell>.
+      CHECK sy-subrc = 0.
+      ASSIGN COMPONENT ls_layout-field OF STRUCTURE ls_data TO <lv_field>.
+      CHECK sy-subrc = 0.
+      lv_cell = <lv_cell>.
+      PERFORM convert_cell USING lv_cell ls_layout-field CHANGING <lv_field>.
+    ENDLOOP.
+
+    APPEND ls_data TO gt_data.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CONVERT_CELL
+*&---------------------------------------------------------------------*
+* Converts one cell (always a string from CL_FDT_XL_SPREADSHEET) into
+* the target field according to its ABAP type:
+*   P (amounts, rate) - number, rounded to the field's decimals
+*                       (Excel floats like 3.0544200000000004 -> 3.05)
+*   D (date)          - Excel serial number, dd/mm/yyyy or yyyy-mm-dd
+*   N / C / string    - trimmed text; "1805.0" style numbers -> "1805"
+* Field-specific normalizations: customer number (ALPHA), service code
+* without leading zeros, Yes/No flags and regions in upper case.
+*----------------------------------------------------------------------*
+FORM convert_cell USING    uv_cell  TYPE string
+                           uv_field TYPE fieldname
+                  CHANGING cv_value TYPE any.
+
+  DATA: lv_text TYPE string,
+        lv_type TYPE c LENGTH 1,
+        lv_dec  TYPE i,
+        lv_num  TYPE decfloat34,
+        lv_date TYPE d.
+
+  lv_text = shift_left( shift_right( uv_cell ) ).
+  CLEAR cv_value.
+  IF lv_text IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  DESCRIBE FIELD cv_value TYPE lv_type DECIMALS lv_dec.
+
+  CASE lv_type.
+    WHEN 'P'.
+      PERFORM text_to_number USING lv_text CHANGING lv_num.
+      cv_value = round( val = lv_num dec = lv_dec ).
+
+    WHEN 'D'.
+      PERFORM text_to_date USING lv_text CHANGING lv_date.
+      cv_value = lv_date.
+
+    WHEN OTHERS.
+*     Numbers read from numeric cells may carry ".0"
+      IF matches( val = lv_text regex = `^\d+\.0+$` ).
+        SPLIT lv_text AT '.' INTO lv_text DATA(lv_rest).
+      ENDIF.
+      CASE uv_field.
+        WHEN 'KUNNR'.
+          CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+            EXPORTING input  = lv_text
+            IMPORTING output = cv_value.
+          RETURN.
+        WHEN 'SERVICE_CODE'.
+          SHIFT lv_text LEFT DELETING LEADING '0'.
+        WHEN 'ISS_WHT_FLAG' OR 'OUTSIDE_SP_FLAG' OR 'SERVICE_REGION' OR 'TAKER_REGION'.
+          lv_text = to_upper( lv_text ).
+        WHEN 'TAKER_MUN_REG'.
+          IF lv_text = '0'.
+            CLEAR lv_text.
+          ENDIF.
+        WHEN 'SERVICE_CITY_CODE'.
+          lv_text = replace( val = lv_text regex = `\D` with = `` occ = 0 ).
+      ENDCASE.
+      cv_value = lv_text.
+  ENDCASE.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  TEXT_TO_NUMBER
+*&---------------------------------------------------------------------*
+* Accepts 2000 / 27.48978 / 1.5E-2 (Excel) and 2.000,00 (typed text).
+*----------------------------------------------------------------------*
+FORM text_to_number USING    uv_text TYPE string
+                    CHANGING cv_num  TYPE decfloat34.
+
+  DATA lv_text TYPE string.
+
+  lv_text = uv_text.
+  IF lv_text CS ','.
+    REPLACE ALL OCCURRENCES OF '.' IN lv_text WITH ''.
+    REPLACE ALL OCCURRENCES OF ',' IN lv_text WITH '.'.
+  ENDIF.
+  CONDENSE lv_text NO-GAPS.
+  TRY.
+      cv_num = lv_text.
+    CATCH cx_sy_conversion_error.
+      CLEAR cv_num.
+  ENDTRY.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  TEXT_TO_DATE
+*&---------------------------------------------------------------------*
+* Excel serial date (days since 30.12.1899), dd/mm/yyyy, dd.mm.yyyy or
+* yyyy-mm-dd. Anything else -> initial (message 024 later).
+*----------------------------------------------------------------------*
+FORM text_to_date USING    uv_text TYPE string
+                  CHANGING cv_date TYPE d.
+
+  DATA: lv_num  TYPE decfloat34,
+        lv_days TYPE i,
+        lv_d    TYPE c LENGTH 2,
+        lv_m    TYPE c LENGTH 2,
+        lv_y    TYPE c LENGTH 4.
+
+  CLEAR cv_date.
+
+  IF matches( val = uv_text regex = `^\d+(\.\d+)?$` ).
+    lv_num  = uv_text.
+    lv_days = trunc( lv_num ).
+    cv_date = '18991230'.
+    cv_date = cv_date + lv_days.
+  ELSEIF matches( val = uv_text regex = `^\d{2}[/.]\d{2}[/.]\d{4}.*` ).
+    lv_d = substring( val = uv_text off = 0 len = 2 ).
+    lv_m = substring( val = uv_text off = 3 len = 2 ).
+    lv_y = substring( val = uv_text off = 6 len = 4 ).
+    cv_date = |{ lv_y }{ lv_m }{ lv_d }|.
+  ELSEIF matches( val = uv_text regex = `^\d{4}-\d{2}-\d{2}.*` ).
+    cv_date = |{ substring( val = uv_text off = 0 len = 4 ) }| &&
+              |{ substring( val = uv_text off = 5 len = 2 ) }| &&
+              |{ substring( val = uv_text off = 8 len = 2 ) }|.
+  ENDIF.
+
+  IF cv_date IS NOT INITIAL.
+    CALL FUNCTION 'DATE_CHECK_PLAUSIBILITY'
+      EXPORTING date = cv_date
+      EXCEPTIONS OTHERS = 1.
+    IF sy-subrc <> 0.
+      CLEAR cv_date.
+    ENDIF.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  NORMALIZE_TEXT
+*&---------------------------------------------------------------------*
+* Upper case, accents removed, leading/trailing blanks removed, inner
+* blank runs reduced to one. Used for header and sheet-name matching
+* and for address comparisons.
+*----------------------------------------------------------------------*
+FORM normalize_text USING    uv_text TYPE any
+                    CHANGING cv_text TYPE string.
+
+  cv_text = to_upper( uv_text ).
+  TRANSLATE cv_text USING 'ÁAÀAÂAÃAÄAÉEÈEÊEËEÍIÌIÎIÏIÓOÒOÔOÕOÖOÚUÙUÛUÜUÇCÑN'.
+  CONDENSE cv_text.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SAVE_FILE
+*&---------------------------------------------------------------------*
+* New FILE_ID from number range ZNFSE_FILE, then the file header and
+* all its lines (status blank) are inserted and committed.
+*----------------------------------------------------------------------*
+FORM save_file.
+
+  DATA lv_number TYPE c LENGTH 10.
+
+  CALL FUNCTION 'NUMBER_GET_NEXT'
+    EXPORTING
+      nr_range_nr = gc_nr_range
+      object      = gc_nr_object
+    IMPORTING
+      number      = lv_number
+    EXCEPTIONS
+      OTHERS      = 1.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE 'E' NUMBER sy-msgno
+      WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+  gs_file-file_id    = lv_number.
+  gs_file-line_count = lines( gt_data ).
+  gs_file-status     = gc_file_error.         " recalculated in UPDATE_FILE_STATUS
+
+  LOOP AT gt_data ASSIGNING FIELD-SYMBOL(<ls_data>).
+    <ls_data>-file_id = gs_file-file_id.
+  ENDLOOP.
+
+  INSERT zsd_br_nfse_file FROM gs_file.
+  IF gt_data IS NOT INITIAL.
+    INSERT zsd_br_nfse_data FROM TABLE gt_data.
+  ENDIF.
+  COMMIT WORK.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  ADD_LOG
+*&---------------------------------------------------------------------*
+* Buffers one message for a line (LINE_ID 000000 = file level). The
+* text is resolved now, in the logon language. Written to the database
+* by FLUSH_LOG, always in the same LUW as the line's status.
+*----------------------------------------------------------------------*
+FORM add_log USING uv_line_id TYPE any
+                   uv_msgty   TYPE symsgty
+                   uv_msgno   TYPE any
+                   uv_v1      TYPE any
+                   uv_v2      TYPE any
+                   uv_v3      TYPE any.
+
+  PERFORM add_log_full USING uv_line_id uv_msgty gc_msgid uv_msgno
+                             uv_v1 uv_v2 uv_v3 space.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  ADD_LOG_FULL
+*&---------------------------------------------------------------------*
+* Same as ADD_LOG, for messages of any class (BAPI RETURN).
+*----------------------------------------------------------------------*
+FORM add_log_full USING uv_line_id TYPE any
+                        uv_msgty   TYPE symsgty
+                        uv_msgid   TYPE any
+                        uv_msgno   TYPE any
+                        uv_v1      TYPE any
+                        uv_v2      TYPE any
+                        uv_v3      TYPE any
+                        uv_v4      TYPE any.
+
+  DATA ls_log TYPE zsd_br_nfse_log.
+
+  ls_log-file_id  = gs_file-file_id.
+  ls_log-line_id  = uv_line_id.
+  ls_log-msgty    = uv_msgty.
+  ls_log-msgid    = uv_msgid.
+  ls_log-msgno    = uv_msgno.
+  ls_log-msgv1    = uv_v1.
+  ls_log-msgv2    = uv_v2.
+  ls_log-msgv3    = uv_v3.
+  ls_log-msgv4    = uv_v4.
+  ls_log-log_date = sy-datum.
+  ls_log-log_time = sy-uzeit.
+  PERFORM next_log_item USING ls_log-file_id ls_log-line_id
+                        CHANGING ls_log-log_item.
+
+  MESSAGE ID ls_log-msgid TYPE 'S' NUMBER ls_log-msgno
+    WITH ls_log-msgv1 ls_log-msgv2 ls_log-msgv3 ls_log-msgv4
+    INTO ls_log-message.
+
+  APPEND ls_log TO gt_log.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  NEXT_LOG_ITEM
+*&---------------------------------------------------------------------*
+* Next free LOG_ITEM for a line. The first time a line is seen, the
+* highest item already on the database is read (reprocessing appends
+* new messages to the old ones).
+*----------------------------------------------------------------------*
+FORM next_log_item USING    uv_file_id TYPE zsd_br_nfse_file_id
+                            uv_line_id TYPE zsd_br_nfse_line_id
+                   CHANGING cv_item    TYPE zsd_br_nfse_log_item.
+
+  READ TABLE gt_log_counter ASSIGNING FIELD-SYMBOL(<ls_counter>)
+    WITH TABLE KEY file_id = uv_file_id line_id = uv_line_id.
+  IF sy-subrc <> 0.
+    SELECT MAX( log_item ) FROM zsd_br_nfse_log
+      WHERE file_id = @uv_file_id
+        AND line_id = @uv_line_id
+      INTO @DATA(lv_max).
+    INSERT VALUE #( file_id = uv_file_id line_id = uv_line_id log_item = lv_max )
+      INTO TABLE gt_log_counter ASSIGNING <ls_counter>.
+  ENDIF.
+  <ls_counter>-log_item = <ls_counter>-log_item + 1.
+  cv_item = <ls_counter>-log_item.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  FLUSH_LOG
+*&---------------------------------------------------------------------*
+* Writes the buffered messages. No COMMIT here: the caller decides the
+* LUW (BAPI_TRANSACTION_COMMIT or COMMIT WORK).
+*----------------------------------------------------------------------*
+FORM flush_log.
+
+  IF gt_log IS NOT INITIAL.
+    INSERT zsd_br_nfse_log FROM TABLE gt_log.
+    CLEAR gt_log.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SAVE_LINE_STATUS
+*&---------------------------------------------------------------------*
+* Persists the current status of every line plus the buffered log.
+*----------------------------------------------------------------------*
+FORM save_line_status.
+
+  IF gt_data IS NOT INITIAL.
+    UPDATE zsd_br_nfse_data FROM TABLE gt_data.
+  ENDIF.
+  PERFORM flush_log.
+  COMMIT WORK.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  LOAD_PARAMS
+*&---------------------------------------------------------------------*
+FORM load_params USING uv_bukrs TYPE bukrs.
+
+  DATA lv_text TYPE string.
+
+  SELECT * FROM zsd_br_nfse_parm
+    WHERE bukrs = @uv_bukrs
+    INTO TABLE @gt_param.
+
+  PERFORM get_param_text USING gc_p_send_cbs_ibs '' CHANGING lv_text.
+  gv_send_cbs = xsdbool( lv_text = abap_true ).
+
+  PERFORM get_param_text USING gc_p_iss_tolerance '' CHANGING lv_text.
+  IF lv_text IS INITIAL.
+    gv_iss_tol = gc_def_tolerance.
+  ELSE.
+    TRY.
+        gv_iss_tol = lv_text.
+      CATCH cx_sy_conversion_error.
+        gv_iss_tol = gc_def_tolerance.
+    ENDTRY.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_PARAM
+*&---------------------------------------------------------------------*
+* Mapping lookup in ZSD_BR_NFSE_PARM: exact INPUT first, then "*".
+*----------------------------------------------------------------------*
+FORM get_param USING    uv_field  TYPE fieldname
+                        uv_column TYPE any
+                        uv_input  TYPE any
+               CHANGING cv_output TYPE any
+                        cv_found  TYPE abap_bool.
+
+  DATA: lv_input  TYPE zsd_br_nfse_input_value,
+        lv_column TYPE zsd_br_nfse_file_column_name.
+
+  CLEAR cv_output.
+  cv_found = abap_false.
+  lv_input  = uv_input.
+  lv_column = uv_column.
+  CONDENSE lv_input.
+
+  READ TABLE gt_param INTO DATA(ls_param)
+    WITH TABLE KEY bukrs            = gs_file-bukrs
+                   field_name       = uv_field
+                   file_column_name = lv_column
+                   input            = lv_input.
+  IF sy-subrc <> 0.
+    READ TABLE gt_param INTO ls_param
+      WITH TABLE KEY bukrs            = gs_file-bukrs
+                     field_name       = uv_field
+                     file_column_name = lv_column
+                     input            = gc_wildcard.
+  ENDIF.
+  IF sy-subrc = 0.
+    cv_output = ls_param-output.
+    cv_found  = abap_true.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_PARAM_TEXT
+*&---------------------------------------------------------------------*
+* Fixed parameter (no file column, INPUT = "*") with a default value.
+*----------------------------------------------------------------------*
+FORM get_param_text USING    uv_field   TYPE fieldname
+                             uv_default TYPE any
+                    CHANGING cv_value   TYPE string.
+
+  DATA lv_found TYPE abap_bool.
+
+  PERFORM get_param USING uv_field '' gc_wildcard CHANGING cv_value lv_found.
+  IF lv_found = abap_false.
+    cv_value = uv_default.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_PARAM_NUMBER
+*&---------------------------------------------------------------------*
+FORM get_param_number USING    uv_field   TYPE fieldname
+                               uv_default TYPE i
+                      CHANGING cv_value   TYPE i.
+
+  DATA lv_text TYPE string.
+
+  PERFORM get_param_text USING uv_field '' CHANGING lv_text.
+  IF lv_text CO '0123456789 ' AND lv_text IS NOT INITIAL.
+    cv_value = lv_text.
+  ELSE.
+    cv_value = uv_default.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_COMPONENT
+*&---------------------------------------------------------------------*
+* Reads a component by name. Used for J_1BAA fields so the program
+* does not depend on the exact table layout of the release.
+*----------------------------------------------------------------------*
+FORM get_component USING    us_struct TYPE any
+                            uv_name   TYPE any
+                   CHANGING cv_value  TYPE any.
+
+  ASSIGN COMPONENT uv_name OF STRUCTURE us_struct TO FIELD-SYMBOL(<lv_comp>).
+  IF sy-subrc = 0.
+    cv_value = <lv_comp>.
+  ELSE.
+    CLEAR cv_value.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SET_COMPONENT
+*&---------------------------------------------------------------------*
+* Fills a BAPI field only if it exists in the structure. Used for the
+* tax reform fields (cClassTrib, NBS, operation indicator) and other
+* fields that depend on SAP notes still being implemented: the program
+* compiles and runs before the notes, and starts filling the fields
+* as soon as they appear.
+*----------------------------------------------------------------------*
+FORM set_component USING    uv_name   TYPE any
+                            uv_value  TYPE any
+                   CHANGING cs_struct TYPE any.
+
+  ASSIGN COMPONENT uv_name OF STRUCTURE cs_struct TO FIELD-SYMBOL(<lv_comp>).
+  IF sy-subrc = 0 AND uv_value IS NOT INITIAL.
+    <lv_comp> = uv_value.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  DETERMINE_PLANT
+*&---------------------------------------------------------------------*
+* Plant of the NF item: parameter WERKS, otherwise the first plant
+* assigned to the business place (T001W-J_1BBRANCH).
+*----------------------------------------------------------------------*
+FORM determine_plant.
+
+  DATA lv_text TYPE string.
+
+  PERFORM get_param_text USING gc_p_werks '' CHANGING lv_text.
+  gv_werks = lv_text.
+  IF gv_werks IS INITIAL.
+    SELECT werks FROM t001w
+      WHERE j_1bbranch = @gs_file-branch
+      ORDER BY werks
+      INTO @gv_werks
+      UP TO 1 ROWS.
+    ENDSELECT.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  PREFETCH_MASTER_DATA
+*&---------------------------------------------------------------------*
+* Reads customer and material master data once per file.
+*----------------------------------------------------------------------*
+FORM prefetch_master_data.
+
+  TYPES: BEGIN OF lty_matnr,
+           matnr TYPE matnr,
+         END OF lty_matnr.
+  DATA: lt_matnr TYPE STANDARD TABLE OF lty_matnr,
+        lv_matnr TYPE matnr,
+        lv_found TYPE abap_bool.
+
+  CLEAR: gt_customer, gt_material.
+  PERFORM determine_plant.
+
+* Customers
+  IF gt_data IS NOT INITIAL.
+    SELECT kunnr, stcd1, stcd2, stcd3, ort01, regio, sperr, loevm
+      FROM kna1
+      FOR ALL ENTRIES IN @gt_data
+      WHERE kunnr = @gt_data-kunnr
+      INTO CORRESPONDING FIELDS OF TABLE @gt_customer.
+
+    SELECT kunnr, sperr, loevm FROM knb1
+      FOR ALL ENTRIES IN @gt_data
+      WHERE kunnr = @gt_data-kunnr
+        AND bukrs = @gs_file-bukrs
+      INTO TABLE @DATA(lt_knb1).
+    LOOP AT lt_knb1 INTO DATA(ls_knb1).
+      READ TABLE gt_customer ASSIGNING FIELD-SYMBOL(<ls_cust>)
+        WITH TABLE KEY kunnr = ls_knb1-kunnr.
+      IF sy-subrc = 0.
+        <ls_cust>-in_bukrs    = abap_true.
+        <ls_cust>-sperr_bukrs = ls_knb1-sperr.
+        <ls_cust>-loevm_bukrs = ls_knb1-loevm.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+* Materials mapped from the service codes in this file
+  LOOP AT gt_data INTO DATA(ls_data) WHERE service_code IS NOT INITIAL.
+    PERFORM get_param USING gc_p_matnr gc_col_service_code ls_data-service_code
+                      CHANGING lv_matnr lv_found.
+    IF lv_found = abap_true.
+      CALL FUNCTION 'CONVERSION_EXIT_MATN1_INPUT'
+        EXPORTING  input  = lv_matnr
+        IMPORTING  output = lv_matnr
+        EXCEPTIONS OTHERS = 1.
+      APPEND VALUE #( matnr = lv_matnr ) TO lt_matnr.
+    ENDIF.
+  ENDLOOP.
+  SORT lt_matnr BY matnr.
+  DELETE ADJACENT DUPLICATES FROM lt_matnr COMPARING matnr.
+  IF lt_matnr IS NOT INITIAL.
+    SELECT matnr, meins, lvorm FROM mara
+      FOR ALL ENTRIES IN @lt_matnr
+      WHERE matnr = @lt_matnr-matnr
+      INTO CORRESPONDING FIELDS OF TABLE @gt_material.
+    SELECT matnr FROM marc
+      FOR ALL ENTRIES IN @lt_matnr
+      WHERE matnr = @lt_matnr-matnr
+        AND werks = @gv_werks
+        AND lvorm = @space
+      INTO TABLE @DATA(lt_marc).
+    SELECT matnr, maktx FROM makt
+      FOR ALL ENTRIES IN @lt_matnr
+      WHERE matnr = @lt_matnr-matnr
+        AND spras = @sy-langu
+      INTO TABLE @DATA(lt_makt).
+    LOOP AT gt_material ASSIGNING FIELD-SYMBOL(<ls_mat>).
+      <ls_mat>-in_plant = xsdbool( line_exists( lt_marc[ matnr = <ls_mat>-matnr ] ) ).
+      READ TABLE lt_makt INTO DATA(ls_makt) WITH KEY matnr = <ls_mat>-matnr.
+      IF sy-subrc = 0.
+        <ls_mat>-maktx = ls_makt-maktx.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  VALIDATE_LINES
+*&---------------------------------------------------------------------*
+* Runs every line check; a line with at least one error gets status E.
+* When CBS/IBS are not sent to the NF, message 040 is logged once.
+*----------------------------------------------------------------------*
+FORM validate_lines.
+
+  DATA lv_error TYPE abap_bool.
+
+* Lines already created (S) are never touched again - relevant when
+* the admin reprocesses a partially processed file
+  LOOP AT gt_data ASSIGNING FIELD-SYMBOL(<ls_data>) WHERE status <> gc_line_success.
+    PERFORM validate_line USING <ls_data> CHANGING lv_error.
+    <ls_data>-status = COND #( WHEN lv_error = abap_true THEN gc_line_error
+                               ELSE gc_line_new ).
+  ENDLOOP.
+
+  IF gv_send_cbs = abap_false AND line_exists( gt_data[ status = gc_line_new ] ).
+    PERFORM add_log USING '000000' gc_msgty_info '040' space space space.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  VALIDATE_LINE
+*&---------------------------------------------------------------------*
+* Line checks (messages 002 - 016, 019, 020, 023 - 025, 028, 029, 039).
+* All checks run; each failure writes its own log entry.
+*----------------------------------------------------------------------*
+FORM validate_line USING    us_data  TYPE zsd_br_nfse_data
+                   CHANGING cv_error TYPE abap_bool.
+
+  DATA: lv_digits    TYPE string,
+        lv_matnr     TYPE matnr,
+        lv_found     TYPE abap_bool,
+        lv_withheld  TYPE p LENGTH 15 DECIMALS 2,
+        lv_iss_calc  TYPE p LENGTH 15 DECIMALS 2,
+        lv_text      TYPE string,
+        lv_text2     TYPE string,
+        lv_required  TYPE string,
+        lv_rps       TYPE string,
+        lv_v1        TYPE symsgv,
+        lv_v2        TYPE symsgv.
+
+  cv_error = abap_false.
+  DATA(lv_line) = us_data-line_id.
+
+* 039 - RPS numeric, at most 6 digits (it becomes J_1BNFDOC-NFNUM)
+  lv_rps = us_data-rps_number.
+  CONDENSE lv_rps NO-GAPS.
+  IF lv_rps IS INITIAL OR lv_rps CN '0123456789' OR strlen( lv_rps ) > gc_rps_max_len.
+    PERFORM add_log USING lv_line gc_msgty_error '039' us_data-rps_number space space.
+    cv_error = abap_true.
+  ENDIF.
+
+* 002 / 019 / 020 / 003 - customer
+  READ TABLE gt_customer INTO DATA(ls_cust) WITH TABLE KEY kunnr = us_data-kunnr.
+  IF sy-subrc <> 0.
+    PERFORM add_log USING lv_line gc_msgty_error '002' us_data-kunnr space space.
+    cv_error = abap_true.
+  ELSE.
+    IF ls_cust-in_bukrs = abap_false.
+      PERFORM add_log USING lv_line gc_msgty_error '019' us_data-kunnr gs_file-bukrs space.
+      cv_error = abap_true.
+    ENDIF.
+    IF ls_cust-sperr IS NOT INITIAL OR ls_cust-loevm IS NOT INITIAL
+       OR ls_cust-sperr_bukrs IS NOT INITIAL OR ls_cust-loevm_bukrs IS NOT INITIAL.
+      PERFORM add_log USING lv_line gc_msgty_error '020' us_data-kunnr space space.
+      cv_error = abap_true.
+    ENDIF.
+    lv_digits = replace( val = us_data-taker_tax_id regex = `\D` with = `` occ = 0 ).
+    lv_text   = replace( val = COND string( WHEN strlen( lv_digits ) = 11 THEN ls_cust-stcd2
+                                            ELSE ls_cust-stcd1 )
+                         regex = `\D` with = `` occ = 0 ).
+    IF lv_digits IS INITIAL OR lv_digits <> lv_text.
+      PERFORM add_log USING lv_line gc_msgty_error '003' us_data-taker_tax_id us_data-kunnr space.
+      cv_error = abap_true.
+    ENDIF.
+*   028 (W) - address in the file differs from the customer master
+    PERFORM normalize_text USING us_data-taker_city CHANGING lv_text.
+    PERFORM normalize_text USING ls_cust-ort01 CHANGING lv_text2.
+    IF ( lv_text IS NOT INITIAL AND lv_text2 IS NOT INITIAL AND lv_text <> lv_text2 )
+       OR ( us_data-taker_region IS NOT INITIAL AND ls_cust-regio IS NOT INITIAL
+            AND us_data-taker_region <> ls_cust-regio ).
+      PERFORM add_log USING lv_line gc_msgty_warning '028' us_data-kunnr space space.
+    ENDIF.
+  ENDIF.
+
+* 004 / 005 - service code and material
+  IF us_data-service_code IS INITIAL.
+    PERFORM add_log USING lv_line gc_msgty_error '004' space space space.
+    cv_error = abap_true.
+  ELSE.
+    PERFORM get_param USING gc_p_matnr gc_col_service_code us_data-service_code
+                      CHANGING lv_matnr lv_found.
+    IF lv_found = abap_true.
+      CALL FUNCTION 'CONVERSION_EXIT_MATN1_INPUT'
+        EXPORTING  input  = lv_matnr
+        IMPORTING  output = lv_matnr
+        EXCEPTIONS OTHERS = 1.
+      READ TABLE gt_material INTO DATA(ls_mat) WITH TABLE KEY matnr = lv_matnr.
+      lv_found = xsdbool( sy-subrc = 0 AND ls_mat-lvorm IS INITIAL AND ls_mat-in_plant = abap_true ).
+    ENDIF.
+    IF lv_found = abap_false.
+      PERFORM add_log USING lv_line gc_msgty_error '005' us_data-service_code space space.
+      cv_error = abap_true.
+    ENDIF.
+  ENDIF.
+
+* 006 - amount
+  IF us_data-service_amount <= 0.
+    PERFORM add_log USING lv_line gc_msgty_error '006' space space space.
+    cv_error = abap_true.
+  ENDIF.
+
+* 007 - withheld taxes (ISS only when withheld) must not exceed the amount
+  lv_withheld = us_data-inss_amt + us_data-irrf_wht_amt + us_data-csll_wht_amt
+              + us_data-cbs_wht_amt + us_data-ibs_wht_amt.
+  IF us_data-iss_wht_flag = gc_yes.
+    lv_withheld = lv_withheld + us_data-iss_amt.
+  ENDIF.
+  IF lv_withheld > us_data-service_amount.
+    lv_v1 = |{ lv_withheld NUMBER = USER }|.
+    lv_v2 = |{ us_data-service_amount NUMBER = USER }|.
+    PERFORM add_log USING lv_line gc_msgty_error '007' lv_v1 lv_v2 space.
+    cv_error = abap_true.
+  ENDIF.
+
+* 024 / 008 - service date
+  IF us_data-service_date IS INITIAL.
+    PERFORM add_log USING lv_line gc_msgty_error '024' space space space.
+    cv_error = abap_true.
+  ELSEIF us_data-service_date > gs_file-doc_date.
+    lv_v1 = |{ us_data-service_date DATE = USER }|.
+    lv_v2 = |{ gs_file-doc_date DATE = USER }|.
+    PERFORM add_log USING lv_line gc_msgty_error '008' lv_v1 lv_v2 space.
+    cv_error = abap_true.
+  ENDIF.
+
+* 009 - description
+  lv_text = condense( us_data-service_description ).
+  IF lv_text IS INITIAL.
+    PERFORM add_log USING lv_line gc_msgty_error '009' space space space.
+    cv_error = abap_true.
+  ENDIF.
+
+* 010 / 011 - withheld vs. due
+  IF us_data-cbs_wht_amt > us_data-cbs_due_amt.
+    lv_v1 = |{ us_data-cbs_wht_amt NUMBER = USER }|.
+    lv_v2 = |{ us_data-cbs_due_amt NUMBER = USER }|.
+    PERFORM add_log USING lv_line gc_msgty_error '010' lv_v1 lv_v2 space.
+    cv_error = abap_true.
+  ENDIF.
+  IF us_data-ibs_wht_amt > us_data-ibs_due_amt.
+    lv_v1 = |{ us_data-ibs_wht_amt NUMBER = USER }|.
+    lv_v2 = |{ us_data-ibs_due_amt NUMBER = USER }|.
+    PERFORM add_log USING lv_line gc_msgty_error '011' lv_v1 lv_v2 space.
+    cv_error = abap_true.
+  ENDIF.
+
+* 012 - ISS withheld flag
+  IF us_data-iss_wht_flag <> gc_yes AND us_data-iss_wht_flag <> gc_no.
+    PERFORM add_log USING lv_line gc_msgty_error '012' us_data-iss_wht_flag space space.
+    cv_error = abap_true.
+  ENDIF.
+
+* 013 - ISS = amount x rate (tolerance parameter ISS_TOLERANCE)
+  lv_iss_calc = us_data-service_amount * us_data-iss_rate.
+  IF abs( lv_iss_calc - us_data-iss_amt ) > gv_iss_tol.
+    lv_v1 = |{ us_data-iss_amt NUMBER = USER }|.
+    lv_v2 = |{ lv_iss_calc NUMBER = USER }|.
+    PERFORM add_log USING lv_line gc_msgty_error '013' lv_v1 lv_v2 space.
+    cv_error = abap_true.
+  ENDIF.
+
+* 014 - required tax groups (01 CBS/IBS due, 02 INSS, 03 withholdings)
+  PERFORM get_param_text USING gc_p_taxgrp_req_01 '' CHANGING lv_required.
+  IF lv_required = abap_true AND us_data-cbs_due_amt <= 0 AND us_data-ibs_due_amt <= 0.
+    PERFORM add_log USING lv_line gc_msgty_error '014' '01' space space.
+    cv_error = abap_true.
+  ENDIF.
+  PERFORM get_param_text USING gc_p_taxgrp_req_02 '' CHANGING lv_required.
+  IF lv_required = abap_true AND us_data-inss_amt <= 0.
+    PERFORM add_log USING lv_line gc_msgty_error '014' '02' space space.
+    cv_error = abap_true.
+  ENDIF.
+  PERFORM get_param_text USING gc_p_taxgrp_req_03 '' CHANGING lv_required.
+  IF lv_required = abap_true AND us_data-irrf_wht_amt <= 0 AND us_data-csll_wht_amt <= 0
+     AND us_data-cbs_wht_amt <= 0 AND us_data-ibs_wht_amt <= 0 AND us_data-iss_amt <= 0.
+    PERFORM add_log USING lv_line gc_msgty_error '014' '03' space space.
+    cv_error = abap_true.
+  ENDIF.
+
+* 015 / 029 / 016 - place of service
+  IF us_data-outside_sp_flag = gc_yes AND us_data-service_city_code IS INITIAL.
+    PERFORM add_log USING lv_line gc_msgty_error '015' space space space.
+    cv_error = abap_true.
+  ENDIF.
+  IF us_data-outside_sp_flag = gc_no AND us_data-service_city_code IS NOT INITIAL.
+    PERFORM add_log USING lv_line gc_msgty_warning '029' space space space.
+  ENDIF.
+  IF us_data-service_city_code IS NOT INITIAL.
+    PERFORM check_city_region USING us_data CHANGING lv_found.
+    IF lv_found = abap_false.
+      PERFORM add_log USING lv_line gc_msgty_error '016'
+        us_data-service_region us_data-service_city_code space.
+      cv_error = abap_true.
+    ENDIF.
+  ENDIF.
+
+* 023 / 025 - configuration needed to build the NF
+  PERFORM check_line_config USING us_data CHANGING lv_found.
+  IF lv_found = abap_false.
+    cv_error = abap_true.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_CITY_REGION
+*&---------------------------------------------------------------------*
+* 016 - the first two digits of the IBGE municipality code identify
+* the state (35 = SP, 41 = PR, ...). The code must have 7 digits.
+*----------------------------------------------------------------------*
+FORM check_city_region USING    us_data TYPE zsd_br_nfse_data
+                       CHANGING cv_ok   TYPE abap_bool.
+
+  TYPES: BEGIN OF lty_uf,
+           code TYPE c LENGTH 2,
+           uf   TYPE c LENGTH 2,
+         END OF lty_uf.
+  DATA lt_uf TYPE SORTED TABLE OF lty_uf WITH UNIQUE KEY code.
+
+  lt_uf = VALUE #(
+    ( code = '11' uf = 'RO' ) ( code = '12' uf = 'AC' ) ( code = '13' uf = 'AM' )
+    ( code = '14' uf = 'RR' ) ( code = '15' uf = 'PA' ) ( code = '16' uf = 'AP' )
+    ( code = '17' uf = 'TO' ) ( code = '21' uf = 'MA' ) ( code = '22' uf = 'PI' )
+    ( code = '23' uf = 'CE' ) ( code = '24' uf = 'RN' ) ( code = '25' uf = 'PB' )
+    ( code = '26' uf = 'PE' ) ( code = '27' uf = 'AL' ) ( code = '28' uf = 'SE' )
+    ( code = '29' uf = 'BA' ) ( code = '31' uf = 'MG' ) ( code = '32' uf = 'ES' )
+    ( code = '33' uf = 'RJ' ) ( code = '35' uf = 'SP' ) ( code = '41' uf = 'PR' )
+    ( code = '42' uf = 'SC' ) ( code = '43' uf = 'RS' ) ( code = '50' uf = 'MS' )
+    ( code = '51' uf = 'MT' ) ( code = '52' uf = 'GO' ) ( code = '53' uf = 'DF' ) ).
+
+  DATA(lv_code) = CONV string( us_data-service_city_code ).
+  cv_ok = abap_false.
+  IF strlen( lv_code ) <> 7 OR lv_code CN '0123456789'.
+    RETURN.
+  ENDIF.
+  READ TABLE lt_uf INTO DATA(ls_uf) WITH TABLE KEY code = lv_code(2).
+  IF sy-subrc = 0 AND ls_uf-uf = us_data-service_region.
+    cv_ok = abap_true.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_LINE_CONFIG
+*&---------------------------------------------------------------------*
+* 023 - every tax column with a value needs its tax type parameter
+*       (CBS/IBS columns only when SEND_CBS_IBS = X).
+* 025 - other mandatory NF parameters (CFOP, tax laws, item type,
+*       material usage, plant).
+*----------------------------------------------------------------------*
+FORM check_line_config USING    us_data TYPE zsd_br_nfse_data
+                       CHANGING cv_ok   TYPE abap_bool.
+
+  DATA: lv_value TYPE string,
+        lv_found TYPE abap_bool.
+
+  cv_ok = abap_true.
+  DATA(lv_line) = us_data-line_id.
+
+  IF gv_send_cbs = abap_true.
+    PERFORM check_tax_type USING lv_line us_data-cbs_due_amt gc_p_taxtyp_cbs    'CBS'            CHANGING cv_ok.
+    PERFORM check_tax_type USING lv_line us_data-ibs_due_amt gc_p_taxtyp_ibs    'IBS'            CHANGING cv_ok.
+    PERFORM check_tax_type USING lv_line us_data-cbs_wht_amt gc_p_taxtyp_cbs_wt 'CBS (withheld)' CHANGING cv_ok.
+    PERFORM check_tax_type USING lv_line us_data-ibs_wht_amt gc_p_taxtyp_ibs_wt 'IBS (withheld)' CHANGING cv_ok.
+  ENDIF.
+  PERFORM check_tax_type USING lv_line us_data-inss_amt     gc_p_taxtyp_inss 'INSS' CHANGING cv_ok.
+  PERFORM check_tax_type USING lv_line us_data-irrf_wht_amt gc_p_taxtyp_irrf 'IRRF' CHANGING cv_ok.
+  PERFORM check_tax_type USING lv_line us_data-csll_wht_amt gc_p_taxtyp_csll 'CSLL' CHANGING cv_ok.
+
+* ISS tax type depends on the withheld flag
+  IF us_data-iss_amt > 0.
+    PERFORM get_param USING gc_p_taxtyp_iss gc_col_iss_wht us_data-iss_wht_flag
+                      CHANGING lv_value lv_found.
+    IF lv_found = abap_false OR lv_value IS INITIAL.
+      PERFORM add_log USING lv_line gc_msgty_error '023' 'ISS' space space.
+      cv_ok = abap_false.
+    ENDIF.
+  ENDIF.
+
+* CFOP by service taker region
+  PERFORM get_param USING gc_p_cfop gc_col_taker_region us_data-taker_region
+                    CHANGING lv_value lv_found.
+  IF lv_found = abap_false.
+    PERFORM add_log USING lv_line gc_msgty_error '025' gc_p_cfop us_data-taker_region space.
+    cv_ok = abap_false.
+  ENDIF.
+
+* ISS tax law by withheld flag
+  PERFORM get_param USING gc_p_taxlw3 gc_col_iss_wht us_data-iss_wht_flag
+                    CHANGING lv_value lv_found.
+  IF lv_found = abap_false.
+    PERFORM add_log USING lv_line gc_msgty_error '025' gc_p_taxlw3 us_data-iss_wht_flag space.
+    cv_ok = abap_false.
+  ENDIF.
+
+* Fixed item parameters
+  DATA(lt_fixed) = VALUE gty_fieldname_tab( ( gc_p_taxlw1 ) ( gc_p_taxlw2 ) ( gc_p_taxlw4 )
+                                            ( gc_p_taxlw5 ) ( gc_p_itmtyp ) ( gc_p_matuse ) ).
+  LOOP AT lt_fixed INTO DATA(lv_name).
+    PERFORM get_param USING lv_name '' gc_wildcard CHANGING lv_value lv_found.
+    IF lv_found = abap_false.
+      PERFORM add_log USING lv_line gc_msgty_error '025' lv_name gc_wildcard space.
+      cv_ok = abap_false.
+    ENDIF.
+  ENDLOOP.
+
+  IF gv_werks IS INITIAL.
+    PERFORM add_log USING lv_line gc_msgty_error '025' gc_p_werks gs_file-branch space.
+    cv_ok = abap_false.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_TAX_TYPE
+*&---------------------------------------------------------------------*
+* 023 - a tax column with a value needs its TAXTYP_* parameter.
+*----------------------------------------------------------------------*
+FORM check_tax_type USING    uv_line   TYPE any
+                             uv_amount TYPE any
+                             uv_param  TYPE fieldname
+                             uv_label  TYPE any
+                    CHANGING cv_ok     TYPE abap_bool.
+
+  DATA: lv_value TYPE string,
+        lv_found TYPE abap_bool.
+
+  IF uv_amount > 0.
+    PERFORM get_param USING uv_param '' gc_wildcard CHANGING lv_value lv_found.
+    IF lv_found = abap_false OR lv_value IS INITIAL.
+      PERFORM add_log USING uv_line gc_msgty_error '023' uv_label space space.
+      cv_ok = abap_false.
+    ENDIF.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_DUPLICATES
+*&---------------------------------------------------------------------*
+* Only lines without errors. Two criteria, against lines already
+* created with success (any file of the same company code and business
+* place) and against earlier lines of the same file:
+*   A (017) - same RPS
+*   B (026) - same customer + service date + amount + service code
+* A previous NF that was cancelled (J_1BNFDOC-CANCEL) does not count.
+*----------------------------------------------------------------------*
+FORM check_duplicates.
+
+  TYPES: BEGIN OF lty_prev,
+           file_id        TYPE zsd_br_nfse_file_id,
+           line_id        TYPE zsd_br_nfse_line_id,
+           docnum         TYPE j_1bdocnum,
+           rps_number     TYPE zsd_br_nfse_rps_number,
+           kunnr          TYPE kunnr,
+           service_date   TYPE zsd_br_nfse_service_date,
+           service_amount TYPE zsd_br_nfse_service_amount,
+           service_code   TYPE zsd_br_nfse_service_code,
+         END OF lty_prev.
+  DATA: lt_prev    TYPE STANDARD TABLE OF lty_prev,
+        lt_check   TYPE gty_data_tab,
+        ls_dup     TYPE gty_duplicate.
+
+  CLEAR gt_duplicate.
+  lt_check = VALUE #( FOR ls IN gt_data WHERE ( status = gc_line_new ) ( ls ) ).
+  IF lt_check IS INITIAL.
+    RETURN.
+  ENDIF.
+
+* Previous successful lines with the same RPS or the same content
+  SELECT d~file_id, d~line_id, d~docnum, d~rps_number, d~kunnr,
+         d~service_date, d~service_amount, d~service_code
+    FROM zsd_br_nfse_data AS d
+    INNER JOIN zsd_br_nfse_file AS f ON f~file_id = d~file_id
+    FOR ALL ENTRIES IN @lt_check
+    WHERE f~bukrs      = @gs_file-bukrs
+      AND f~branch     = @gs_file-branch
+      AND d~status     = @gc_line_success
+      AND d~file_id   <> @gs_file-file_id
+      AND ( d~rps_number = @lt_check-rps_number
+         OR ( d~kunnr          = @lt_check-kunnr
+          AND d~service_date   = @lt_check-service_date
+          AND d~service_amount = @lt_check-service_amount
+          AND d~service_code   = @lt_check-service_code ) )
+    INTO TABLE @lt_prev.
+
+  IF lt_prev IS NOT INITIAL.
+    SELECT docnum, docdat, cancel FROM j_1bnfdoc
+      FOR ALL ENTRIES IN @lt_prev
+      WHERE docnum = @lt_prev-docnum
+      INTO TABLE @DATA(lt_nf).
+*   Cancelled NFs may be issued again
+    LOOP AT lt_nf INTO DATA(ls_nf) WHERE cancel IS NOT INITIAL.
+      DELETE lt_prev WHERE docnum = ls_nf-docnum.
+    ENDLOOP.
+  ENDIF.
+
+  LOOP AT gt_data ASSIGNING FIELD-SYMBOL(<ls_data>) WHERE status = gc_line_new.
+    CLEAR ls_dup.
+
+*   Criterion A - RPS (database, then earlier lines of this file)
+    READ TABLE lt_prev INTO DATA(ls_prev) WITH KEY rps_number = <ls_data>-rps_number.
+    IF sy-subrc = 0.
+      ls_dup-criterion = 'A'.
+    ELSE.
+      LOOP AT gt_data INTO DATA(ls_other) WHERE line_id < <ls_data>-line_id
+                                            AND status  = gc_line_new
+                                            AND rps_number = <ls_data>-rps_number.
+        ls_dup-criterion = 'A'.
+        ls_prev = CORRESPONDING #( ls_other ).
+        EXIT.
+      ENDLOOP.
+    ENDIF.
+
+*   Criterion B - content
+    IF ls_dup-criterion IS INITIAL.
+      READ TABLE lt_prev INTO ls_prev WITH KEY kunnr          = <ls_data>-kunnr
+                                               service_date   = <ls_data>-service_date
+                                               service_amount = <ls_data>-service_amount
+                                               service_code   = <ls_data>-service_code.
+      IF sy-subrc = 0.
+        ls_dup-criterion = 'B'.
+      ELSE.
+        LOOP AT gt_data INTO ls_other WHERE line_id < <ls_data>-line_id
+                                        AND status  = gc_line_new
+                                        AND kunnr          = <ls_data>-kunnr
+                                        AND service_date   = <ls_data>-service_date
+                                        AND service_amount = <ls_data>-service_amount
+                                        AND service_code   = <ls_data>-service_code.
+          ls_dup-criterion = 'B'.
+          ls_prev = CORRESPONDING #( ls_other ).
+          EXIT.
+        ENDLOOP.
+      ENDIF.
+    ENDIF.
+
+    IF ls_dup-criterion IS NOT INITIAL.
+      ls_dup-line_id      = <ls_data>-line_id.
+      ls_dup-kunnr        = <ls_data>-kunnr.
+      ls_dup-rps_number   = <ls_data>-rps_number.
+      ls_dup-amount       = <ls_data>-service_amount.
+      ls_dup-waers        = <ls_data>-waers.
+      ls_dup-prev_file_id = ls_prev-file_id.
+      ls_dup-prev_line_id = ls_prev-line_id.
+      ls_dup-prev_docnum  = ls_prev-docnum.
+      READ TABLE lt_nf INTO ls_nf WITH KEY docnum = ls_prev-docnum.
+      IF sy-subrc = 0.
+        ls_dup-prev_docdat = ls_nf-docdat.
+      ENDIF.
+      APPEND ls_dup TO gt_duplicate.
+    ENDIF.
+    CLEAR ls_prev.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SHOW_DUPLICATES_POPUP
+*&---------------------------------------------------------------------*
+* One list with all duplicates, then the decision:
+*   "Continue without duplicates" -> duplicates get E + 017/026
+*   "Cancel processing"           -> CV_CONTINUE = false
+* In "Validate only" mode the list is informative (no question).
+*----------------------------------------------------------------------*
+FORM show_duplicates_popup CHANGING cv_continue TYPE abap_bool.
+
+  DATA: lo_popup  TYPE REF TO cl_salv_table,
+        lv_answer TYPE c LENGTH 1.
+
+  cv_continue = abap_true.
+
+  TRY.
+      cl_salv_table=>factory( IMPORTING r_salv_table = lo_popup
+                              CHANGING  t_table      = gt_duplicate ).
+      lo_popup->set_screen_popup( start_column = 5  end_column = 150
+                                  start_line   = 3  end_line   = 18 ).
+      lo_popup->get_display_settings( )->set_list_header( CONV #( TEXT-p01 ) ).
+      lo_popup->get_columns( )->set_optimize( abap_true ).
+      lo_popup->display( ).
+    CATCH cx_salv_msg.
+      " list is only informative - the question below still follows
+  ENDTRY.
+
+  IF gs_file-test_run = abap_false.
+    CALL FUNCTION 'POPUP_TO_CONFIRM'
+      EXPORTING
+        titlebar              = TEXT-p02
+        text_question         = TEXT-p03
+        text_button_1         = TEXT-p04          " Continue without duplicates
+        text_button_2         = TEXT-p05          " Cancel processing
+        default_button        = '2'
+        display_cancel_button = abap_false
+      IMPORTING
+        answer                = lv_answer
+      EXCEPTIONS
+        OTHERS                = 1.
+    IF sy-subrc <> 0 OR lv_answer <> '1'.
+      cv_continue = abap_false.
+      RETURN.
+    ENDIF.
+  ENDIF.
+
+* Duplicated lines leave the run with their message
+  LOOP AT gt_duplicate INTO DATA(ls_dup).
+    READ TABLE gt_data ASSIGNING FIELD-SYMBOL(<ls_data>) WITH KEY line_id = ls_dup-line_id.
+    CHECK sy-subrc = 0.
+    <ls_data>-status = gc_line_error.
+    IF ls_dup-criterion = 'A'.
+      PERFORM add_log USING ls_dup-line_id gc_msgty_error '017'
+        ls_dup-rps_number ls_dup-prev_file_id ls_dup-prev_line_id.
+    ELSE.
+      PERFORM add_log USING ls_dup-line_id gc_msgty_error '026'
+        ls_dup-prev_file_id ls_dup-prev_line_id ls_dup-prev_docnum.
+    ENDIF.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CANCEL_BY_USER
+*&---------------------------------------------------------------------*
+* "Cancel processing" in the duplicates popup: no NF is created, every
+* line not yet created gets E, the file gets 027 and is flagged as
+* cancelled by the user.
+*----------------------------------------------------------------------*
+FORM cancel_by_user.
+
+  LOOP AT gt_data ASSIGNING FIELD-SYMBOL(<ls_data>) WHERE status <> gc_line_success.
+    <ls_data>-status = gc_line_error.
+  ENDLOOP.
+  PERFORM add_log USING '000000' gc_msgty_error '027' space space space.
+  gs_file-cancel_flag = abap_true.
+  PERFORM save_line_status.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  MARK_VALIDATED
+*&---------------------------------------------------------------------*
+* "Validate only": lines without errors become V. No lock, no BAPI.
+*----------------------------------------------------------------------*
+FORM mark_validated.
+
+  LOOP AT gt_data ASSIGNING FIELD-SYMBOL(<ls_data>) WHERE status = gc_line_new.
+    <ls_data>-status = gc_line_validated.
+  ENDLOOP.
+  PERFORM save_line_status.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CREATE_NFS
+*&---------------------------------------------------------------------*
+* Locks company code + business place (030 when another user is
+* already creating NFs there), then creates one NF per valid line.
+*----------------------------------------------------------------------*
+FORM create_nfs.
+
+  DATA: lv_varkey TYPE rstable-varkey,
+        lv_total  TYPE i,
+        lv_count  TYPE i.
+
+  lv_varkey = |{ sy-mandt }{ gs_file-bukrs }{ gs_file-branch }|.
+  CALL FUNCTION 'ENQUEUE_E_TABLE'
+    EXPORTING
+      tabname        = gc_lock_table
+      varkey         = lv_varkey
+    EXCEPTIONS
+      foreign_lock   = 1
+      system_failure = 2
+      OTHERS         = 3.
+  IF sy-subrc <> 0.
+*   Lines stay with status blank and can be reprocessed later
+    PERFORM add_log USING '000000' gc_msgty_error '030' sy-msgv1 gs_file-bukrs gs_file-branch.
+    PERFORM save_line_status.
+    RETURN.
+  ENDIF.
+
+  lv_total = REDUCE i( INIT n = 0 FOR ls IN gt_data WHERE ( status = gc_line_new ) NEXT n = n + 1 ).
+
+  LOOP AT gt_data ASSIGNING FIELD-SYMBOL(<ls_data>) WHERE status = gc_line_new.
+    lv_count = lv_count + 1.
+    cl_progress_indicator=>progress_indicate(
+      i_text               = |{ TEXT-g01 } { lv_count } / { lv_total }|
+      i_processed          = lv_count
+      i_total              = lv_total
+      i_output_immediately = abap_true ).
+    PERFORM create_nf CHANGING <ls_data>.
+  ENDLOOP.
+
+  CALL FUNCTION 'DEQUEUE_E_TABLE'
+    EXPORTING
+      tabname = gc_lock_table
+      varkey  = lv_varkey.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CREATE_NF
+*&---------------------------------------------------------------------*
+* One NF Writer per line:
+*   success -> DATA: S + DOCNUM, LOG 022, then BAPI_TRANSACTION_COMMIT
+*              (same LUW - the NF never exists without its log)
+*   error   -> BAPI_TRANSACTION_ROLLBACK, DATA: E, BAPI messages in
+*              the LOG, COMMIT WORK
+*----------------------------------------------------------------------*
+FORM create_nf CHANGING cs_data TYPE zsd_br_nfse_data.
+
+  DATA: ls_header  TYPE bapi_j_1bnfdoc,
+        lt_partner TYPE STANDARD TABLE OF bapi_j_1bnfnad,
+        lt_item    TYPE STANDARD TABLE OF bapi_j_1bnflin,
+        lt_tax     TYPE STANDARD TABLE OF bapi_j_1bnfstx,
+        lt_text    TYPE STANDARD TABLE OF bapi_j_1bnfftx,
+        lt_return  TYPE STANDARD TABLE OF bapiret2,
+        lv_docnum  TYPE j_1bdocnum.
+
+  PERFORM build_bapi_header  USING cs_data CHANGING ls_header lt_partner.
+  PERFORM build_bapi_item    USING cs_data CHANGING lt_item.
+  PERFORM build_bapi_taxes   USING cs_data CHANGING lt_tax.
+  PERFORM build_bapi_texts   USING cs_data CHANGING lt_text.
+
+  CALL FUNCTION 'BAPI_J_1B_NF_CREATEFROMDATA'
+    EXPORTING
+      obj_header     = ls_header
+    IMPORTING
+      doc_number     = lv_docnum
+    TABLES
+      obj_partner    = lt_partner
+      obj_item       = lt_item
+      obj_item_tax   = lt_tax
+      obj_header_msg = lt_text
+      return         = lt_return.
+
+  IF lv_docnum IS NOT INITIAL
+     AND NOT line_exists( lt_return[ type = 'E' ] )
+     AND NOT line_exists( lt_return[ type = 'A' ] ).
+    cs_data-status = gc_line_success.
+    cs_data-docnum = lv_docnum.
+    PERFORM add_log USING cs_data-line_id gc_msgty_success '022' lv_docnum space space.
+    UPDATE zsd_br_nfse_data FROM cs_data.
+    PERFORM flush_log.
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING wait = abap_true.
+  ELSE.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    cs_data-status = gc_line_error.
+    LOOP AT lt_return INTO DATA(ls_return) WHERE type = 'E' OR type = 'A'.
+      PERFORM add_log_full USING cs_data-line_id gc_msgty_error ls_return-id ls_return-number
+        ls_return-message_v1 ls_return-message_v2 ls_return-message_v3 ls_return-message_v4.
+    ENDLOOP.
+    UPDATE zsd_br_nfse_data FROM cs_data.
+    PERFORM flush_log.
+    COMMIT WORK.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  BUILD_BAPI_HEADER
+*&---------------------------------------------------------------------*
+* Header: company / business place / NF type from the run, document
+* type, model and series from J_1BAA, outgoing, issue date, NFNUM =
+* RPS from the spreadsheet, partner AG = customer (address and tax
+* numbers come from the customer master).
+*----------------------------------------------------------------------*
+FORM build_bapi_header USING    us_data    TYPE zsd_br_nfse_data
+                       CHANGING cs_header  TYPE bapi_j_1bnfdoc
+                                ct_partner TYPE STANDARD TABLE.
+
+  DATA: lv_value   TYPE string,
+        ls_partner TYPE bapi_j_1bnfnad.
+
+  cs_header-bukrs  = gs_file-bukrs.
+  cs_header-branch = gs_file-branch.
+  cs_header-nftype = gs_file-nftype.
+  cs_header-direct = gc_direct_out.
+  cs_header-docdat = gs_file-doc_date.
+  cs_header-pstdat = gs_file-doc_date.
+  cs_header-manual = abap_true.
+  cs_header-waerk  = gc_currency.
+  cs_header-parvw  = gc_partner_role.
+  cs_header-parid  = us_data-kunnr.
+  cs_header-partyp = gc_partner_type.
+  cs_header-nfnum  = condense( us_data-rps_number ).   " RPS = J_1BNFDOC-NFNUM
+
+  PERFORM get_component USING gs_j1baa 'DOCTYP' CHANGING lv_value.
+  PERFORM set_component USING 'DOCTYP' lv_value CHANGING cs_header.
+  PERFORM get_component USING gs_j1baa 'MODEL' CHANGING lv_value.
+  PERFORM set_component USING 'MODEL' lv_value CHANGING cs_header.
+  PERFORM get_component USING gs_j1baa 'SERIES' CHANGING lv_value.
+  PERFORM set_component USING 'SERIES' lv_value CHANGING cs_header.
+
+  ls_partner-parvw  = gc_partner_role.
+  ls_partner-parid  = us_data-kunnr.
+  ls_partner-partyp = gc_partner_type.
+  APPEND ls_partner TO ct_partner.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  BUILD_BAPI_ITEM
+*&---------------------------------------------------------------------*
+* One item: material mapped from the service code, quantity 1, value =
+* service amount, CFOP by taker region, fiscal fields from parameters.
+* Optional / tax reform fields are set only if they exist (see
+* SET_COMPONENT).
+*----------------------------------------------------------------------*
+FORM build_bapi_item USING    us_data TYPE zsd_br_nfse_data
+                     CHANGING ct_item TYPE STANDARD TABLE.
+
+  DATA: ls_item  TYPE bapi_j_1bnflin,
+        lv_matnr TYPE matnr,
+        lv_value TYPE string,
+        lv_found TYPE abap_bool.
+
+  PERFORM get_param USING gc_p_matnr gc_col_service_code us_data-service_code
+                    CHANGING lv_matnr lv_found.
+  CALL FUNCTION 'CONVERSION_EXIT_MATN1_INPUT'
+    EXPORTING  input  = lv_matnr
+    IMPORTING  output = lv_matnr
+    EXCEPTIONS OTHERS = 1.
+  READ TABLE gt_material INTO DATA(ls_mat) WITH TABLE KEY matnr = lv_matnr.
+
+  ls_item-itmnum = gc_item_number.
+  ls_item-matnr  = lv_matnr.
+  ls_item-maktx  = ls_mat-maktx.
+  ls_item-meins  = ls_mat-meins.
+  ls_item-menge  = 1.
+  ls_item-netpr  = us_data-service_amount.
+  ls_item-netwr  = us_data-service_amount.
+  ls_item-werks  = gv_werks.
+
+  PERFORM get_param USING gc_p_cfop gc_col_taker_region us_data-taker_region
+                    CHANGING lv_value lv_found.
+  PERFORM set_component USING 'CFOP' lv_value CHANGING ls_item.
+
+* Fixed parameters: the parameter name is also the BAPI field name
+  DATA(lt_fixed) = VALUE gty_fieldname_tab( ( gc_p_itmtyp ) ( gc_p_matuse ) ( gc_p_matorg )
+                                            ( gc_p_taxlw1 ) ( gc_p_taxlw2 )
+                                            ( gc_p_taxlw4 ) ( gc_p_taxlw5 ) ).
+  LOOP AT lt_fixed INTO DATA(lv_name).
+    PERFORM get_param USING lv_name '' gc_wildcard CHANGING lv_value lv_found.
+    PERFORM set_component USING lv_name lv_value CHANGING ls_item.
+  ENDLOOP.
+
+  PERFORM get_param USING gc_p_taxlw3 gc_col_iss_wht us_data-iss_wht_flag
+                    CHANGING lv_value lv_found.
+  PERFORM set_component USING 'TAXLW3' lv_value CHANGING ls_item.
+
+  PERFORM set_component USING 'XPED' us_data-po_number CHANGING ls_item.
+
+* Tax reform fields (filled only once the SAP notes add them)
+  lv_value = us_data-tax_class_main.
+  IF lv_value IS INITIAL.
+    PERFORM get_param USING gc_p_cclasstrib gc_col_service_code us_data-service_code
+                      CHANGING lv_value lv_found.
+  ENDIF.
+  PERFORM set_component USING 'CCLASSTRIB' lv_value CHANGING ls_item.
+  PERFORM set_component USING 'NBS' us_data-nbs_code CHANGING ls_item.
+  PERFORM set_component USING 'CINDOP' us_data-oper_ind_code CHANGING ls_item.
+
+  APPEND ls_item TO ct_item.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  BUILD_BAPI_TAXES
+*&---------------------------------------------------------------------*
+* One tax line per column with a value > 0. Base = service amount.
+* Rate = spreadsheet rate x 100 for ISS, value / base x 100 otherwise.
+* CBS/IBS (due and withheld) only when SEND_CBS_IBS = X.
+*----------------------------------------------------------------------*
+FORM build_bapi_taxes USING    us_data TYPE zsd_br_nfse_data
+                      CHANGING ct_tax  TYPE STANDARD TABLE.
+
+  DATA: lv_taxtyp TYPE string,
+        lv_found  TYPE abap_bool,
+        lv_rate   TYPE p LENGTH 8 DECIMALS 4.
+
+  IF gv_send_cbs = abap_true.
+    PERFORM append_tax USING us_data-service_amount us_data-cbs_due_amt gc_p_taxtyp_cbs    CHANGING ct_tax.
+    PERFORM append_tax USING us_data-service_amount us_data-ibs_due_amt gc_p_taxtyp_ibs    CHANGING ct_tax.
+    PERFORM append_tax USING us_data-service_amount us_data-cbs_wht_amt gc_p_taxtyp_cbs_wt CHANGING ct_tax.
+    PERFORM append_tax USING us_data-service_amount us_data-ibs_wht_amt gc_p_taxtyp_ibs_wt CHANGING ct_tax.
+  ENDIF.
+  PERFORM append_tax USING us_data-service_amount us_data-inss_amt     gc_p_taxtyp_inss CHANGING ct_tax.
+  PERFORM append_tax USING us_data-service_amount us_data-irrf_wht_amt gc_p_taxtyp_irrf CHANGING ct_tax.
+  PERFORM append_tax USING us_data-service_amount us_data-csll_wht_amt gc_p_taxtyp_csll CHANGING ct_tax.
+
+* ISS: tax type by withheld flag, rate from the spreadsheet
+  IF us_data-iss_amt > 0.
+    PERFORM get_param USING gc_p_taxtyp_iss gc_col_iss_wht us_data-iss_wht_flag
+                      CHANGING lv_taxtyp lv_found.
+    lv_rate = us_data-iss_rate * 100.
+    APPEND VALUE bapi_j_1bnfstx( itmnum = gc_item_number
+                                 taxtyp = lv_taxtyp
+                                 base   = us_data-service_amount
+                                 rate   = lv_rate
+                                 taxval = us_data-iss_amt ) TO ct_tax.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  APPEND_TAX
+*&---------------------------------------------------------------------*
+* Tax line for one column with a value; the tax type comes from the
+* fixed parameter UV_PARAM. Nothing is added for a zero value.
+*----------------------------------------------------------------------*
+FORM append_tax USING    uv_base   TYPE zsd_br_nfse_service_amount
+                         uv_value  TYPE any
+                         uv_param  TYPE fieldname
+                CHANGING ct_tax    TYPE STANDARD TABLE.
+
+  DATA: lv_rate   TYPE p LENGTH 8 DECIMALS 4,
+        lv_taxtyp TYPE string,
+        lv_found  TYPE abap_bool.
+
+  IF uv_value <= 0.
+    RETURN.
+  ENDIF.
+  PERFORM get_param USING uv_param '' gc_wildcard CHANGING lv_taxtyp lv_found.
+  IF uv_base > 0.
+    lv_rate = uv_value / uv_base * 100.
+  ENDIF.
+  APPEND VALUE bapi_j_1bnfstx( itmnum = gc_item_number
+                               taxtyp = lv_taxtyp
+                               base   = uv_base
+                               rate   = lv_rate
+                               taxval = uv_value ) TO ct_tax.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  BUILD_BAPI_TEXTS
+*&---------------------------------------------------------------------*
+* Service description: "|" and "||" are line breaks in the
+* spreadsheet; each line is then split into 72-character lines without
+* cutting words.
+*----------------------------------------------------------------------*
+FORM build_bapi_texts USING    us_data TYPE zsd_br_nfse_data
+                      CHANGING ct_text TYPE STANDARD TABLE.
+
+  DATA: lt_parts TYPE string_table,
+        lt_words TYPE string_table,
+        lv_line  TYPE string,
+        lv_seq   TYPE i.
+
+  SPLIT us_data-service_description AT '|' INTO TABLE lt_parts.
+
+  LOOP AT lt_parts INTO DATA(lv_part).
+    CONDENSE lv_part.
+    CHECK lv_part IS NOT INITIAL.
+    SPLIT lv_part AT space INTO TABLE lt_words.
+    CLEAR lv_line.
+    LOOP AT lt_words INTO DATA(lv_word).
+      IF lv_line IS INITIAL.
+        lv_line = lv_word.
+      ELSEIF strlen( lv_line ) + 1 + strlen( lv_word ) <= gc_text_width.
+        lv_line = |{ lv_line } { lv_word }|.
+      ELSE.
+        lv_seq = lv_seq + 1.
+        APPEND VALUE bapi_j_1bnfftx( seqnum = lv_seq linnum = 1 message = lv_line ) TO ct_text.
+        lv_line = lv_word.
+      ENDIF.
+    ENDLOOP.
+    IF lv_line IS NOT INITIAL.
+      lv_seq = lv_seq + 1.
+      APPEND VALUE bapi_j_1bnfftx( seqnum = lv_seq linnum = 1 message = lv_line ) TO ct_text.
+    ENDIF.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  UPDATE_FILE_STATUS
+*&---------------------------------------------------------------------*
+* S = every line S (or V in "Validate only"), E = no line S/V or the
+* file itself failed, P = anything else. Counters are refreshed.
+*----------------------------------------------------------------------*
+FORM update_file_status.
+
+  DATA: lv_ok    TYPE i,
+        lv_error TYPE i.
+
+  LOOP AT gt_data INTO DATA(ls_data).
+    CASE ls_data-status.
+      WHEN gc_line_success OR gc_line_validated.
+        lv_ok = lv_ok + 1.
+      WHEN gc_line_error.
+        lv_error = lv_error + 1.
+    ENDCASE.
+  ENDLOOP.
+
+  gs_file-line_count    = lines( gt_data ).
+  gs_file-success_count = lv_ok.
+  gs_file-error_count   = lv_error.
+  gs_file-status = COND #(
+    WHEN gt_data IS INITIAL OR lv_ok = 0 THEN gc_file_error
+    WHEN lv_ok = lines( gt_data )        THEN gc_file_success
+    ELSE gc_file_partial ).
+
+  UPDATE zsd_br_nfse_file FROM gs_file.
+  PERFORM flush_log.
+  COMMIT WORK.
+
+  MESSAGE s041(zsd_br_nfse_msg) WITH gs_file-file_id lv_ok lv_error.
+
+ENDFORM.

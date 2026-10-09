@@ -1,0 +1,223 @@
+*---------------------------------------------------------------------*
+* Include   ZSD_BR_NFSE_F02_ADM                                       *
+*---------------------------------------------------------------------*
+* Date:                 09.10.2026                                    *
+* Developer:            Renato Santos                                 *
+* IT Responsible:       Renato Santos                                 *
+* Business Responsible: Juliana Reimberg                              *
+*---------------------------------------------------------------------*
+* Functional description                                              *
+* Admin-only functions, included only by ZSD_BR_NFSE_UPLOAD_ADM:      *
+*   - option 4: maintenance of ZSD_BR_NFSE_PARM (generated dialog)    *
+*   - option 5: purge of old logs (LGPD), simulation by default       *
+*   - "Reprocess errors" (log ALV): runs validation, duplicate check  *
+*     and NF creation again for the lines of one file that are not    *
+*     created yet, from the stored data - no new upload.              *
+*---------------------------------------------------------------------*
+* Authorization logic                                                 *
+* Transaction ZNFSE_ADM. Parameters: S_TABU_DIS (checked by the       *
+* standard maintenance dialog). Purge: F_BKPF_BUK ACTVT 06.           *
+* Reprocessing: F_BKPF_BUK ACTVT 01 + S_TCODE J1B1N (as option 1).    *
+*---------------------------------------------------------------------*
+* Change history                                                      *
+* 09.10.2026  Renato Santos                                           *
+* Initial version.                                                    *
+*---------------------------------------------------------------------*
+
+*&---------------------------------------------------------------------*
+*&      Form  MAINTAIN_PARAMS
+*&---------------------------------------------------------------------*
+* Option 4 - change mode of the generated maintenance dialog (SE54).
+* Change log and transport come from the standard dialog.
+*----------------------------------------------------------------------*
+FORM maintain_params.
+
+  CALL FUNCTION 'VIEW_MAINTENANCE_CALL'
+    EXPORTING
+      action    = 'U'
+      view_name = gc_parm_view
+    EXCEPTIONS
+      OTHERS    = 1.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno
+      WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 DISPLAY LIKE 'E'.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SET_PURGE_DEFAULT_DATE
+*&---------------------------------------------------------------------*
+* Default purge date = today minus LOG_RETENTION_YEARS (default 5).
+*----------------------------------------------------------------------*
+FORM set_purge_default_date USING    uv_bukrs TYPE bukrs
+                            CHANGING cv_date  TYPE datum.
+
+  DATA lv_years TYPE i.
+
+  gs_file-bukrs = uv_bukrs.
+  PERFORM load_params USING uv_bukrs.
+  PERFORM get_param_number USING gc_p_retention gc_def_retention CHANGING lv_years.
+
+  CALL FUNCTION 'RP_CALC_DATE_IN_INTERVAL'
+    EXPORTING
+      date      = sy-datum
+      days      = 0
+      months    = 0
+      signum    = '-'
+      years     = lv_years
+    IMPORTING
+      calc_date = cv_date.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_PURGE_SCREEN
+*&---------------------------------------------------------------------*
+FORM check_purge_screen USING uv_bukrs TYPE bukrs
+                              uv_date  TYPE datum.
+
+  IF uv_bukrs IS INITIAL OR uv_date IS INITIAL.
+    MESSAGE e055(00).
+  ENDIF.
+  AUTHORITY-CHECK OBJECT 'F_BKPF_BUK'
+    ID 'BUKRS' FIELD uv_bukrs
+    ID 'ACTVT' FIELD '06'.
+  IF sy-subrc <> 0.
+    MESSAGE e021(zsd_br_nfse_msg) WITH uv_bukrs sy-tcode.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  PROCESS_PURGE
+*&---------------------------------------------------------------------*
+* Option 5 - deletes FILE, DATA and LOG of the files executed before
+* the purge date. Notas Fiscais in SAP are not affected. Simulation
+* only counts; a real run asks for confirmation first.
+*----------------------------------------------------------------------*
+FORM process_purge.
+
+  DATA: lv_answer TYPE c LENGTH 1,
+        lv_v1     TYPE symsgv,
+        lv_v2     TYPE symsgv,
+        lv_v3     TYPE symsgv.
+
+  SELECT file_id FROM zsd_br_nfse_file
+    WHERE bukrs     = @p_pbukrs
+      AND exec_date < @p_pdate
+    INTO TABLE @DATA(lt_files).
+  IF lt_files IS INITIAL.
+    MESSAGE s042(zsd_br_nfse_msg).
+    RETURN.
+  ENDIF.
+
+  SELECT COUNT(*) FROM zsd_br_nfse_data AS d
+    INNER JOIN zsd_br_nfse_file AS f ON f~file_id = d~file_id
+    WHERE f~bukrs     = @p_pbukrs
+      AND f~exec_date < @p_pdate
+    INTO @DATA(lv_lines).
+  SELECT COUNT(*) FROM zsd_br_nfse_log AS l
+    INNER JOIN zsd_br_nfse_file AS f ON f~file_id = l~file_id
+    WHERE f~bukrs     = @p_pbukrs
+      AND f~exec_date < @p_pdate
+    INTO @DATA(lv_msgs).
+
+  lv_v1 = |{ lines( lt_files ) }|.
+  lv_v2 = |{ lv_lines }|.
+  lv_v3 = |{ lv_msgs }|.
+
+  IF p_ptest = abap_true.
+    MESSAGE s044(zsd_br_nfse_msg) WITH lv_v1 lv_v2 lv_v3.
+    RETURN.
+  ENDIF.
+
+  CALL FUNCTION 'POPUP_TO_CONFIRM'
+    EXPORTING
+      titlebar              = TEXT-r01
+      text_question         = TEXT-r02
+      default_button        = '2'
+      display_cancel_button = abap_false
+    IMPORTING
+      answer                = lv_answer
+    EXCEPTIONS
+      OTHERS                = 1.
+  IF sy-subrc <> 0 OR lv_answer <> '1'.
+    RETURN.
+  ENDIF.
+
+  LOOP AT lt_files INTO DATA(ls_file).
+    DELETE FROM zsd_br_nfse_log  WHERE file_id = @ls_file-file_id.
+    DELETE FROM zsd_br_nfse_data WHERE file_id = @ls_file-file_id.
+    DELETE FROM zsd_br_nfse_file WHERE file_id = @ls_file-file_id.
+  ENDLOOP.
+  COMMIT WORK.
+
+  MESSAGE s034(zsd_br_nfse_msg) WITH lv_v1 lv_v2 lv_v3.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  REPROCESS_FILE
+*&---------------------------------------------------------------------*
+* Called dynamically from the log ALV ("Reprocess errors"). Lines with
+* status S stay as they are; every other line is validated, checked
+* for duplicates and created again with the issue date of the screen.
+* New messages are appended to the old ones (NEXT_LOG_ITEM).
+*----------------------------------------------------------------------*
+FORM reprocess_file USING uv_file_id TYPE zsd_br_nfse_file_id.
+
+  DATA lv_cont TYPE abap_bool.
+
+  CLEAR: gs_file, gt_data, gt_log, gt_log_counter, gt_duplicate.
+
+  SELECT SINGLE * FROM zsd_br_nfse_file
+    WHERE file_id = @uv_file_id
+    INTO @gs_file.
+  IF sy-subrc <> 0.
+    RETURN.
+  ENDIF.
+  PERFORM check_authority USING gs_file-bukrs '01'.
+  PERFORM check_branch_and_nftype USING gs_file-bukrs gs_file-branch gs_file-nftype.
+
+  SELECT * FROM zsd_br_nfse_data
+    WHERE file_id = @uv_file_id
+    ORDER BY line_id
+    INTO TABLE @gt_data.
+  IF NOT line_exists( gt_data[ status = gc_line_error ] )
+     AND NOT line_exists( gt_data[ status = gc_line_new ] )
+     AND NOT line_exists( gt_data[ status = gc_line_validated ] ).
+    MESSAGE s045(zsd_br_nfse_msg) WITH uv_file_id.
+    RETURN.
+  ENDIF.
+
+  gs_file-doc_date    = p_docdat.
+  gs_file-test_run    = abap_false.
+  gs_file-cancel_flag = abap_false.
+  LOOP AT gt_data ASSIGNING FIELD-SYMBOL(<ls_data>) WHERE status <> gc_line_success.
+    <ls_data>-status = gc_line_new.
+  ENDLOOP.
+  PERFORM add_log USING '000000' gc_msgty_info '046' sy-uname space space.
+
+  PERFORM load_params USING gs_file-bukrs.
+  PERFORM prefetch_master_data.
+  PERFORM validate_lines.
+  PERFORM save_line_status.
+
+  PERFORM check_duplicates.
+  IF gt_duplicate IS NOT INITIAL.
+    PERFORM show_duplicates_popup CHANGING lv_cont.
+    IF lv_cont = abap_false.
+      PERFORM cancel_by_user.
+      PERFORM update_file_status.
+      PERFORM display_result.
+      RETURN.
+    ENDIF.
+  ENDIF.
+  PERFORM save_line_status.
+
+  PERFORM create_nfs.
+  PERFORM update_file_status.
+  PERFORM display_result.
+
+ENDFORM.

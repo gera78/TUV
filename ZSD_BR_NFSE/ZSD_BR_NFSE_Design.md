@@ -107,7 +107,7 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
 | Domínios / elementos de dados | SE11 | ver seção 6 |
 | Classe de mensagem | SE91 | `ZSD_BR_NFSE_MSG` |
 | Range de numeração | SNRO | `ZNFSE_FILE` (intervalo 01, 10 dígitos) |
-| Objeto de bloqueio | SE11 | `EZSD_BR_NFSE` (tabela `ZSD_BR_NFSE_FILE`, argumentos BUKRS + BRANCH; campos adicionados à tabela de bloqueio via estrutura) |
+| Bloqueio | – | `ENQUEUE_E_TABLE` (tabela `ZSD_BR_NFSE_FILE`, chave mandante + BUKRS + BRANCH) – dispensa objeto de bloqueio próprio, porque BUKRS/BRANCH não são chave da tabela |
 | Visão de manutenção (TMG) | SE54 | `ZSD_BR_NFSE_PARM` (grupo de funções `ZSD_BR_NFSE_PARM`) |
 | Transações | SE93 | `ZNFSE` (usuário), `ZNFSE_ADM` (admin) |
 

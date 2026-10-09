@@ -1,0 +1,651 @@
+*---------------------------------------------------------------------*
+* Include   ZSD_BR_NFSE_F03                                           *
+*---------------------------------------------------------------------*
+* Date:                 09.10.2026                                    *
+* Developer:            Renato Santos                                 *
+* IT Responsible:       Renato Santos                                 *
+* Business Responsible: Juliana Reimberg                              *
+*---------------------------------------------------------------------*
+* Functional description                                              *
+* Option 3 - output file. Lists the NFs created by this solution      *
+* whose NFS-e was authorized by the city (J1BNFE), lets the user tick *
+* the lines and writes a CSV in the layout of the "NFS-e emitidas"    *
+* export of the São Paulo city portal: 73 columns separated by ";",   *
+* ISO-8859-1, header line, one line per NF and a closing "Total"      *
+* line. The posting macro of the business reads RPS (column 7) and    *
+* NFS-e number (column 2) from it.                                    *
+* Every exported line records file name, date, time, user and count  *
+* in ZSD_BR_NFSE_DATA plus message 035 in the log - only after the    *
+* download succeeded.                                                 *
+*---------------------------------------------------------------------*
+* Authorization logic                                                 *
+* F_BKPF_BUK display (ACTVT 03) per company code of the selection.    *
+*---------------------------------------------------------------------*
+* Change history                                                      *
+* 09.10.2026  Renato Santos                                           *
+* Initial version.                                                    *
+*---------------------------------------------------------------------*
+
+*&---------------------------------------------------------------------*
+*&      Form  DISPLAY_EXPORT
+*&---------------------------------------------------------------------*
+* Selection for option 3. Only lines with status S are read; whether a
+* line can be exported is decided from the NF (NFENUM filled, not
+* cancelled) and from J_1BNFE_ACTIVE (DOCSTA authorized).
+*----------------------------------------------------------------------*
+FORM display_export.
+
+  DATA: lt_files TYPE gty_file_tab,
+        lt_data  TYPE gty_data_tab,
+        lv_ok    TYPE abap_bool.
+
+  SELECT * FROM zsd_br_nfse_file
+    WHERE bukrs     IN @s_xbukrs
+      AND branch    IN @s_xbranc
+      AND file_id   IN @s_xfile
+      AND exec_date IN @s_xexdt
+    INTO TABLE @lt_files.
+
+  LOOP AT lt_files INTO DATA(ls_file).
+    PERFORM authority_ok USING ls_file-bukrs '03' CHANGING lv_ok.
+    IF lv_ok = abap_false.
+      DELETE lt_files.
+    ENDIF.
+  ENDLOOP.
+
+  IF lt_files IS NOT INITIAL.
+    SELECT * FROM zsd_br_nfse_data
+      FOR ALL ENTRIES IN @lt_files
+      WHERE file_id      = @lt_files-file_id
+        AND status       = @gc_line_success
+        AND rps_number   IN @s_xrps
+        AND service_date IN @s_xsrvdt
+        AND kunnr        IN @s_xkunnr
+        AND service_code IN @s_xsrvcd
+      INTO TABLE @lt_data.
+  ENDIF.
+
+  CASE p_xsitu.
+    WHEN 'T'.
+      DELETE lt_data WHERE outside_sp_flag = gc_yes.
+    WHEN 'F'.
+      DELETE lt_data WHERE outside_sp_flag <> gc_yes.
+  ENDCASE.
+  IF p_xnew = abap_true.
+    DELETE lt_data WHERE export_count > 0.
+  ENDIF.
+
+  IF lt_data IS INITIAL.
+    MESSAGE s042(zsd_br_nfse_msg) DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  PERFORM fill_alv USING lt_files lt_data.
+  PERFORM set_export_state.
+  SORT gt_alv BY rps_number.
+  PERFORM display_alv USING gc_mode_export.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SET_EXPORT_STATE
+*&---------------------------------------------------------------------*
+* NFS-e state from J_1BNFE_ACTIVE and the "exportable" flag. Lines
+* never exported and exportable are pre-ticked.
+*----------------------------------------------------------------------*
+FORM set_export_state.
+
+  IF gt_alv IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  SELECT docnum, docsta, cancel FROM j_1bnfe_active
+    FOR ALL ENTRIES IN @gt_alv
+    WHERE docnum = @gt_alv-docnum
+    INTO TABLE @DATA(lt_active).
+
+  LOOP AT gt_alv ASSIGNING FIELD-SYMBOL(<ls_alv>).
+    READ TABLE lt_active INTO DATA(ls_active) WITH KEY docnum = <ls_alv>-docnum.
+    IF sy-subrc <> 0.
+      CLEAR ls_active.
+    ENDIF.
+
+    IF <ls_alv>-cancelled IS NOT INITIAL OR ls_active-cancel IS NOT INITIAL.
+      <ls_alv>-nfse_state = TEXT-s04.                      " Cancelled
+    ELSEIF ls_active-docsta = gc_docsta_auth AND <ls_alv>-nfenum IS NOT INITIAL.
+      <ls_alv>-nfse_state = TEXT-s01.                      " Authorized
+      <ls_alv>-exportable = abap_true.
+    ELSEIF ls_active-docsta IS NOT INITIAL.
+      <ls_alv>-nfse_state = TEXT-s03.                      " Rejected
+    ELSE.
+      <ls_alv>-nfse_state = TEXT-s02.                      " Awaiting authorization
+    ENDIF.
+
+    <ls_alv>-sel = xsdbool( <ls_alv>-exportable = abap_true AND <ls_alv>-export_count = 0 ).
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  EXPORT_CSV
+*&---------------------------------------------------------------------*
+* "Export CSV" button of the export list.
+*----------------------------------------------------------------------*
+FORM export_csv.
+
+  DATA: lt_lines    TYPE string_table,
+        lv_answer   TYPE c LENGTH 1,
+        lv_name     TYPE string,
+        lv_path     TYPE string,
+        lv_full     TYPE string,
+        lv_action   TYPE i,
+        lv_default  TYPE string,
+        lv_count    TYPE i,
+        lv_question TYPE string,
+        lv_v1       TYPE symsgv,
+        lv_v2       TYPE symsgv.
+
+  DATA(lt_sel) = VALUE gty_alv_tab( FOR ls IN gt_alv WHERE ( sel = abap_true AND exportable = abap_true ) ( ls ) ).
+  IF lt_sel IS INITIAL.
+    MESSAGE s037(zsd_br_nfse_msg) DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+* Lines exported before: all again (Yes), only new ones (No) or cancel
+  DATA(lv_already) = REDUCE i( INIT n = 0 FOR ls IN lt_sel WHERE ( export_count > 0 ) NEXT n = n + 1 ).
+  IF lv_already > 0.
+    lv_question = |{ lv_already } / { lines( lt_sel ) } { TEXT-e02 }|.
+    CALL FUNCTION 'POPUP_TO_CONFIRM'
+      EXPORTING
+        titlebar              = TEXT-e01
+        text_question         = lv_question
+        text_button_1         = TEXT-e03          " Yes - all
+        text_button_2         = TEXT-e04          " No - only new ones
+        display_cancel_button = abap_true
+      IMPORTING
+        answer                = lv_answer
+      EXCEPTIONS
+        OTHERS                = 1.
+    IF sy-subrc <> 0 OR lv_answer = 'A'.
+      RETURN.
+    ENDIF.
+    IF lv_answer = '2'.
+      DELETE lt_sel WHERE export_count > 0.
+    ENDIF.
+    IF lt_sel IS INITIAL.
+      MESSAGE s037(zsd_br_nfse_msg) DISPLAY LIKE 'E'.
+      RETURN.
+    ENDIF.
+  ENDIF.
+
+* File name: NFSe_E_<municipal registration>_<first date>_<last date>.csv
+  PERFORM default_file_name USING lt_sel CHANGING lv_default.
+  cl_gui_frontend_services=>file_save_dialog(
+    EXPORTING
+      default_extension = 'csv'
+      default_file_name = lv_default
+      file_filter       = 'CSV (*.csv)|*.csv'
+    CHANGING
+      filename          = lv_name
+      path              = lv_path
+      fullpath          = lv_full
+      user_action       = lv_action
+    EXCEPTIONS
+      OTHERS            = 1 ).
+  IF sy-subrc <> 0 OR lv_action <> cl_gui_frontend_services=>action_ok.
+    RETURN.
+  ENDIF.
+
+  PERFORM build_csv USING lt_sel CHANGING lt_lines.
+
+  cl_gui_frontend_services=>gui_download(
+    EXPORTING
+      filename = lv_full
+      filetype = 'ASC'
+      codepage = '1100'                               " ISO-8859-1, as the city portal
+    CHANGING
+      data_tab = lt_lines
+    EXCEPTIONS
+      OTHERS   = 1 ).
+  IF sy-subrc <> 0.
+    lv_v1 = lv_name.
+    MESSAGE s036(zsd_br_nfse_msg) WITH lv_v1 DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  PERFORM record_export USING lt_sel lv_name CHANGING lv_count.
+  lv_v1 = |{ lv_count }|.
+  lv_v2 = lv_name.
+  MESSAGE s038(zsd_br_nfse_msg) WITH lv_v1 lv_v2.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  DEFAULT_FILE_NAME
+*&---------------------------------------------------------------------*
+FORM default_file_name USING    ut_sel  TYPE gty_alv_tab
+                       CHANGING cv_name TYPE string.
+
+  DATA lv_im TYPE string.
+
+  DATA(lt_dates) = VALUE gty_data_tab( FOR ls IN ut_sel ( service_date = ls-service_date ) ).
+  SORT lt_dates BY service_date.
+  DATA(lv_first) = lt_dates[ 1 ]-service_date.
+  DATA(lv_last)  = lt_dates[ lines( lt_dates ) ]-service_date.
+
+  READ TABLE ut_sel INTO DATA(ls_first) INDEX 1.
+  gs_file-bukrs = ls_first-bukrs.
+  PERFORM load_params USING ls_first-bukrs.
+  PERFORM get_param_text USING gc_p_prv_mun_reg '' CHANGING lv_im.
+  lv_im = replace( val = lv_im regex = `\D` with = `` occ = 0 ).
+
+  cv_name = |NFSe_E_{ lv_im }_{ lv_first }_{ lv_last }.csv|.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  BUILD_CSV
+*&---------------------------------------------------------------------*
+* Header + one line per NF + "Total" line.
+*----------------------------------------------------------------------*
+FORM build_csv USING    ut_sel   TYPE gty_alv_tab
+               CHANGING ct_lines TYPE string_table.
+
+  DATA: lt_header TYPE string_table,
+        lt_fields TYPE string_table,
+        lv_line   TYPE string,
+        lv_total  TYPE p LENGTH 16 DECIMALS 2,
+        lv_iss    TYPE p LENGTH 16 DECIMALS 2,
+        lv_text   TYPE string.
+
+  CLEAR ct_lines.
+  PERFORM build_csv_header CHANGING lt_header.
+  CONCATENATE LINES OF lt_header INTO lv_line SEPARATED BY ';'.
+  APPEND lv_line TO ct_lines.
+
+  PERFORM prefetch_export_master USING ut_sel.
+
+  LOOP AT ut_sel INTO DATA(ls_sel).
+    IF ls_sel-bukrs <> gs_file-bukrs OR gt_param IS INITIAL.
+      gs_file-bukrs = ls_sel-bukrs.
+      PERFORM load_params USING ls_sel-bukrs.
+    ENDIF.
+    PERFORM build_csv_fields USING ls_sel CHANGING lt_fields.
+    CONCATENATE LINES OF lt_fields INTO lv_line SEPARATED BY ';'.
+    APPEND lv_line TO ct_lines.
+    lv_total = lv_total + ls_sel-service_amount.
+    lv_iss   = lv_iss + ls_sel-iss_amt.
+  ENDLOOP.
+
+* "Total" line: 49 columns, count in column 2, sums in 27, 28 and 31
+  CLEAR lt_fields.
+  DO 49 TIMES.
+    APPEND INITIAL LINE TO lt_fields.
+  ENDDO.
+  lt_fields[ 1 ] = 'Total'.
+  lt_fields[ 2 ] = |{ lines( ut_sel ) }|.
+  PERFORM format_amount USING lv_total CHANGING lv_text.
+  lt_fields[ 27 ] = lv_text.
+  lt_fields[ 28 ] = '0,00'.
+  PERFORM format_amount USING lv_iss CHANGING lv_text.
+  lt_fields[ 31 ] = lv_text.
+  CONCATENATE LINES OF lt_fields INTO lv_line SEPARATED BY ';'.
+  APPEND lv_line TO ct_lines.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  BUILD_CSV_HEADER
+*&---------------------------------------------------------------------*
+* Column names exactly as in the city portal export (09/2026 sample).
+*----------------------------------------------------------------------*
+FORM build_csv_header CHANGING ct_header TYPE string_table.
+
+  CLEAR ct_header.
+  APPEND 'Tipo de Registro' TO ct_header.                                  " 01
+  APPEND 'Nº NFS-e' TO ct_header.                                          " 02
+  APPEND 'Data Hora NFE' TO ct_header.                                     " 03
+  APPEND 'Código de Verificação da NFS-e' TO ct_header.                    " 04
+  APPEND 'Tipo de RPS' TO ct_header.                                       " 05
+  APPEND 'Série do RPS' TO ct_header.                                      " 06
+  APPEND 'Número do RPS' TO ct_header.                                     " 07
+  APPEND 'Data do Fato Gerador' TO ct_header.                              " 08
+  APPEND 'Inscrição Municipal do Prestador' TO ct_header.                  " 09
+  APPEND 'Indicador de CPF/CNPJ do Prestador' TO ct_header.                " 10
+  APPEND 'CPF/CNPJ do Prestador' TO ct_header.                             " 11
+  APPEND 'Razão Social do Prestador' TO ct_header.                         " 12
+  APPEND 'Tipo do Endereço do Prestador' TO ct_header.                     " 13
+  APPEND 'Endereço do Prestador' TO ct_header.                             " 14
+  APPEND 'Número do Endereço do Prestador' TO ct_header.                   " 15
+  APPEND 'Complemento do Endereço do Prestador' TO ct_header.              " 16
+  APPEND 'Bairro do Prestador' TO ct_header.                               " 17
+  APPEND 'Cidade do Prestador' TO ct_header.                               " 18
+  APPEND 'UF do Prestador' TO ct_header.                                   " 19
+  APPEND 'CEP do Prestador' TO ct_header.                                  " 20
+  APPEND 'Email do Prestador' TO ct_header.                                " 21
+  APPEND 'Opção Pelo Simples' TO ct_header.                                " 22
+  APPEND 'Situação da Nota Fiscal' TO ct_header.                           " 23
+  APPEND 'Data de Cancelamento' TO ct_header.                              " 24
+  APPEND 'Nº da Guia' TO ct_header.                                        " 25
+  APPEND 'Data de Quitação da Guia Vinculada a Nota Fiscal' TO ct_header.  " 26
+  APPEND 'Valor dos Serviços' TO ct_header.                                " 27
+  APPEND 'Valor das Deduções' TO ct_header.                                " 28
+  APPEND 'Código do Serviço Prestado na Nota Fiscal' TO ct_header.         " 29
+  APPEND 'Alíquota' TO ct_header.                                          " 30
+  APPEND 'ISS devido' TO ct_header.                                        " 31
+  APPEND 'Valor do Crédito' TO ct_header.                                  " 32
+  APPEND 'ISS Retido' TO ct_header.                                        " 33
+  APPEND 'Indicador de CPF/CNPJ do Tomador' TO ct_header.                  " 34
+  APPEND 'CPF/CNPJ do Tomador' TO ct_header.                               " 35
+  APPEND 'Inscrição Municipal do Tomador' TO ct_header.                    " 36
+  APPEND 'Inscrição Estadual do Tomador' TO ct_header.                     " 37
+  APPEND 'Razão Social do Tomador' TO ct_header.                           " 38
+  APPEND 'Tipo do Endereço do Tomador' TO ct_header.                       " 39
+  APPEND 'Endereço do Tomador' TO ct_header.                               " 40
+  APPEND 'Número do Endereço do Tomador' TO ct_header.                     " 41
+  APPEND 'Complemento do Endereço do Tomador' TO ct_header.                " 42
+  APPEND 'Bairro do Tomador' TO ct_header.                                 " 43
+  APPEND 'Cidade do Tomador' TO ct_header.                                 " 44
+  APPEND 'UF do Tomador' TO ct_header.                                     " 45
+  APPEND 'CEP do Tomador' TO ct_header.                                    " 46
+  APPEND 'Email do Tomador' TO ct_header.                                  " 47
+  APPEND 'Nº NFS-e Substituta' TO ct_header.                               " 48
+  APPEND 'ISS pago' TO ct_header.                                          " 49
+  APPEND 'ISS a pagar' TO ct_header.                                       " 50
+  APPEND 'Indicador de CPF/CNPJ do Intermediário' TO ct_header.            " 51
+  APPEND 'CPF/CNPJ do Intermediário' TO ct_header.                         " 52
+  APPEND 'Inscrição Municipal do Intermediário' TO ct_header.              " 53
+  APPEND 'Razão Social do Intermediário' TO ct_header.                     " 54
+  APPEND 'Repasse do Plano de Saúde' TO ct_header.                         " 55
+  APPEND 'PIS/PASEP' TO ct_header.                                         " 56
+  APPEND 'COFINS' TO ct_header.                                            " 57
+  APPEND 'INSS' TO ct_header.                                              " 58
+  APPEND 'IR' TO ct_header.                                                " 59
+  APPEND 'CSLL' TO ct_header.                                              " 60
+  APPEND 'Carga tributária: Valor' TO ct_header.                           " 61
+  APPEND 'Carga tributária: Porcentagem' TO ct_header.                     " 62
+  APPEND 'Carga tributária: Fonte' TO ct_header.                           " 63
+  APPEND 'CEI' TO ct_header.                                               " 64
+  APPEND 'Matrícula da Obra' TO ct_header.                                 " 65
+  APPEND 'Município Prestação - cód. IBGE' TO ct_header.                   " 66
+  APPEND 'Situação do Aceite' TO ct_header.                                " 67
+  APPEND 'Encapsulamento' TO ct_header.                                    " 68
+  APPEND 'Valor Total Recebido' TO ct_header.                              " 69
+  APPEND 'Tipo de Consolidação' TO ct_header.                              " 70
+  APPEND 'Nº NFS-e Consolidada' TO ct_header.                              " 71
+  APPEND 'Campo Reservado' TO ct_header.                                   " 72
+  APPEND 'Discriminação dos Serviços' TO ct_header.                        " 73
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  PREFETCH_EXPORT_MASTER
+*&---------------------------------------------------------------------*
+* Customer data that the spreadsheet does not carry: state
+* registration (KNA1-STCD3), address supplement and e-mail (ADRC/ADR6).
+*----------------------------------------------------------------------*
+FORM prefetch_export_master USING ut_sel TYPE gty_alv_tab.
+
+  CLEAR: gt_exp_kna1, gt_exp_adrc, gt_exp_adr6.
+  IF ut_sel IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  SELECT * FROM kna1
+    FOR ALL ENTRIES IN @ut_sel
+    WHERE kunnr = @ut_sel-kunnr
+    INTO TABLE @gt_exp_kna1.
+  IF gt_exp_kna1 IS INITIAL.
+    RETURN.
+  ENDIF.
+  SELECT * FROM adrc
+    FOR ALL ENTRIES IN @gt_exp_kna1
+    WHERE addrnumber = @gt_exp_kna1-adrnr
+    INTO TABLE @gt_exp_adrc.
+  SELECT * FROM adr6
+    FOR ALL ENTRIES IN @gt_exp_kna1
+    WHERE addrnumber = @gt_exp_kna1-adrnr
+    INTO TABLE @gt_exp_adr6.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  BUILD_CSV_FIELDS
+*&---------------------------------------------------------------------*
+* The 73 columns of one NF. Sources: J_1BNFDOC (2, 3, 4, 7), the
+* stored spreadsheet line, parameters (provider data, RPS series,
+* service text prefix), the customer master (37, 42, 47) and fixed
+* values as found in the city portal export. PIS/COFINS (56, 57) are
+* 0,00 until the tax team defines their rule (open point P15).
+*----------------------------------------------------------------------*
+FORM build_csv_fields USING    us_alv    TYPE gty_alv
+                      CHANGING ct_fields TYPE string_table.
+
+  DATA: lv_text   TYPE string,
+        lv_iss    TYPE string,
+        lv_digits TYPE string,
+        lv_rate   TYPE p LENGTH 8 DECIMALS 2,
+        lv_found  TYPE abap_bool.
+
+  CLEAR ct_fields.
+  DO 73 TIMES.
+    APPEND INITIAL LINE TO ct_fields.
+  ENDDO.
+
+* 01 - 08: record, NFS-e, authorization, verification code, RPS
+  ct_fields[ 1 ] = '2'.
+  lv_text = condense( CONV string( us_alv-nfenum ) ).
+  SHIFT lv_text LEFT DELETING LEADING '0'.
+  ct_fields[ 2 ] = lv_text.
+  IF us_alv-authdat IS NOT INITIAL.
+    ct_fields[ 3 ] = |{ us_alv-authdat+6(2) }/{ us_alv-authdat+4(2) }/{ us_alv-authdat(4) } | &&
+                     |{ us_alv-authtime(2) }:{ us_alv-authtime+2(2) }:{ us_alv-authtime+4(2) }|.
+  ENDIF.
+  ct_fields[ 4 ] = us_alv-authcod.
+  ct_fields[ 5 ] = 'RPS'.
+  PERFORM get_param_text USING gc_p_rps_series '900' CHANGING lv_text.
+  ct_fields[ 6 ] = lv_text.
+  ct_fields[ 7 ] = condense( us_alv-rps_number ).
+  PERFORM format_date USING us_alv-service_date CHANGING lv_text.
+  ct_fields[ 8 ] = lv_text.
+
+* 09 - 21: service provider (parameters PRV_*), column 10 fixed
+  DATA(lt_provider) = VALUE gty_fieldname_tab(
+    ( gc_p_prv_mun_reg ) ( '' ) ( gc_p_prv_tax_id ) ( gc_p_prv_name ) ( gc_p_prv_str_type )
+    ( gc_p_prv_street ) ( gc_p_prv_house_num ) ( gc_p_prv_compl ) ( gc_p_prv_district )
+    ( gc_p_prv_city ) ( gc_p_prv_region ) ( gc_p_prv_post_code ) ( gc_p_prv_email ) ).
+  LOOP AT lt_provider INTO DATA(lv_param).
+    DATA(lv_col) = 8 + sy-tabix.
+    IF lv_param IS INITIAL.
+      ct_fields[ lv_col ] = '2'.
+    ELSE.
+      PERFORM get_param_text USING lv_param '' CHANGING lv_text.
+      ct_fields[ lv_col ] = lv_text.
+    ENDIF.
+  ENDLOOP.
+
+* 22 - 33: taxation and values
+  ct_fields[ 22 ] = '0'.
+  ct_fields[ 23 ] = us_alv-situation.                       " T = SP, F = outside SP
+  PERFORM format_amount USING us_alv-service_amount CHANGING lv_text.
+  ct_fields[ 27 ] = lv_text.
+  ct_fields[ 28 ] = '0,00'.
+  ct_fields[ 29 ] = us_alv-service_code.
+  lv_rate = us_alv-iss_rate * 100.
+  PERFORM format_amount USING lv_rate CHANGING lv_text.
+  ct_fields[ 30 ] = lv_text.
+  PERFORM format_amount USING us_alv-iss_amt CHANGING lv_iss.
+  ct_fields[ 31 ] = lv_iss.
+  ct_fields[ 32 ] = '0,00'.
+  ct_fields[ 33 ] = us_alv-iss_wht_flag.
+
+* 34 - 47: service taker
+  lv_digits = replace( val = us_alv-taker_tax_id regex = `\D` with = `` occ = 0 ).
+  ct_fields[ 34 ] = SWITCH #( strlen( lv_digits ) WHEN 11 THEN '1' WHEN 14 THEN '2' ELSE '3' ).
+  ct_fields[ 35 ] = us_alv-taker_tax_id.
+  ct_fields[ 36 ] = us_alv-taker_mun_reg.
+  READ TABLE gt_exp_kna1 INTO DATA(ls_kna1) WITH TABLE KEY kunnr = us_alv-kunnr.
+  IF sy-subrc = 0.
+    ct_fields[ 37 ] = ls_kna1-stcd3.
+    READ TABLE gt_exp_adrc INTO DATA(ls_adrc) WITH KEY addrnumber = ls_kna1-adrnr.
+    IF sy-subrc = 0.
+      ct_fields[ 42 ] = ls_adrc-house_num2.
+    ENDIF.
+    LOOP AT gt_exp_adr6 INTO DATA(ls_adr6) WHERE addrnumber = ls_kna1-adrnr.
+      ct_fields[ 47 ] = ls_adr6-smtp_addr.
+      IF ls_adr6-flgdefault = abap_true.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+  ct_fields[ 38 ] = us_alv-taker_name.
+  ct_fields[ 39 ] = us_alv-taker_street_type.
+  ct_fields[ 40 ] = us_alv-taker_street.
+  ct_fields[ 41 ] = us_alv-taker_house_num.
+  ct_fields[ 43 ] = us_alv-taker_district.
+  ct_fields[ 44 ] = us_alv-taker_city.
+  ct_fields[ 45 ] = us_alv-taker_region.
+  ct_fields[ 46 ] = us_alv-taker_postal_code.
+
+* 50 - 69: ISS to pay, intermediary, federal taxes, site, place
+  ct_fields[ 50 ] = lv_iss.                                  " ISS to pay = ISS due
+  ct_fields[ 51 ] = '3'.
+  ct_fields[ 56 ] = '0,00'.                                  " PIS  - open point P15
+  ct_fields[ 57 ] = '0,00'.                                  " COFINS - open point P15
+  PERFORM format_amount USING us_alv-inss_amt CHANGING lv_text.
+  ct_fields[ 58 ] = lv_text.
+  PERFORM format_amount USING us_alv-irrf_wht_amt CHANGING lv_text.
+  ct_fields[ 59 ] = lv_text.
+  PERFORM format_amount USING us_alv-csll_wht_amt CHANGING lv_text.
+  ct_fields[ 60 ] = lv_text.
+  ct_fields[ 64 ] = '0'.
+  ct_fields[ 65 ] = '0'.
+  ct_fields[ 66 ] = COND #( WHEN us_alv-outside_sp_flag = gc_yes
+                            THEN CONV string( us_alv-service_city_code ) ELSE '0' ).
+  ct_fields[ 68 ] = '0'.
+  ct_fields[ 69 ] = '0,00'.
+
+* 73: city text of the service code + the description
+  PERFORM get_param USING gc_p_srv_descr gc_col_service_code us_alv-service_code
+                    CHANGING lv_text lv_found.
+  ct_fields[ 73 ] = COND #( WHEN lv_found = abap_true AND lv_text IS NOT INITIAL
+                            THEN |{ lv_text }\|\|{ us_alv-service_description }|
+                            ELSE us_alv-service_description ).
+
+* Clean every field: no separator, no line breaks, accents optional
+  PERFORM get_param_text USING gc_p_rm_accents abap_true CHANGING lv_text.
+  LOOP AT ct_fields ASSIGNING FIELD-SYMBOL(<lv_field>).
+    PERFORM clean_csv_text USING lv_text CHANGING <lv_field>.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CLEAN_CSV_TEXT
+*&---------------------------------------------------------------------*
+FORM clean_csv_text USING    uv_remove_accents TYPE string
+                    CHANGING cv_text           TYPE string.
+
+  REPLACE ALL OCCURRENCES OF ';' IN cv_text WITH ','.
+  REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf IN cv_text WITH ` `.
+  REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>newline IN cv_text WITH ` `.
+  IF uv_remove_accents = abap_true.
+    TRANSLATE cv_text USING 'ÁAÀAÂAÃAÄAÉEÈEÊEËEÍIÌIÎIÏIÓOÒOÔOÕOÖOÚUÙUÛUÜUÇCÑN'
+                          & 'áaàaâaãaäaéeèeêeëeíiìiîiïióoòoôoõoöoúuùuûuüuçcñn'.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  FORMAT_AMOUNT
+*&---------------------------------------------------------------------*
+* 163172.94 -> "163.172,94" (Brazilian format, independent of the
+* user's own decimal settings).
+*----------------------------------------------------------------------*
+FORM format_amount USING    uv_amount TYPE any
+                   CHANGING cv_text   TYPE string.
+
+  DATA: lv_int  TYPE string,
+        lv_dec  TYPE string,
+        lv_out  TYPE string,
+        lv_len  TYPE i,
+        lv_neg  TYPE abap_bool.
+
+  cv_text = |{ uv_amount NUMBER = RAW DECIMALS = 2 }|.
+  IF cv_text CS '-'.
+    lv_neg = abap_true.
+    REPLACE ALL OCCURRENCES OF '-' IN cv_text WITH ''.
+  ENDIF.
+  SPLIT cv_text AT '.' INTO lv_int lv_dec.
+
+  lv_len = strlen( lv_int ).
+  WHILE lv_len > 3.
+    lv_len = lv_len - 3.
+    lv_out = |.{ substring( val = lv_int off = lv_len len = 3 ) }{ lv_out }|.
+    lv_int = substring( val = lv_int off = 0 len = lv_len ).
+  ENDWHILE.
+
+  cv_text = |{ COND string( WHEN lv_neg = abap_true THEN `-` ) }{ lv_int }{ lv_out },{ lv_dec }|.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  FORMAT_DATE
+*&---------------------------------------------------------------------*
+FORM format_date USING    uv_date TYPE d
+                 CHANGING cv_text TYPE string.
+
+  IF uv_date IS INITIAL.
+    CLEAR cv_text.
+  ELSE.
+    cv_text = |{ uv_date+6(2) }/{ uv_date+4(2) }/{ uv_date(4) }|.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  RECORD_EXPORT
+*&---------------------------------------------------------------------*
+* After a successful download: export fields on ZSD_BR_NFSE_DATA,
+* message 035 per line, one COMMIT. The list is refreshed in place.
+*----------------------------------------------------------------------*
+FORM record_export USING    ut_sel   TYPE gty_alv_tab
+                            uv_name  TYPE string
+                   CHANGING cv_count TYPE i.
+
+  DATA: ls_data TYPE zsd_br_nfse_data,
+        lv_v1   TYPE symsgv.
+
+  CLEAR: gt_log, gt_log_counter, cv_count.
+  lv_v1 = uv_name.
+
+  LOOP AT ut_sel INTO DATA(ls_sel).
+    MOVE-CORRESPONDING ls_sel TO ls_data.
+    ls_data-export_file  = uv_name.
+    ls_data-export_date  = sy-datum.
+    ls_data-export_time  = sy-uzeit.
+    ls_data-export_user  = sy-uname.
+    ls_data-export_count = ls_data-export_count + 1.
+    UPDATE zsd_br_nfse_data FROM ls_data.
+
+    gs_file-file_id = ls_data-file_id.
+    PERFORM add_log USING ls_data-line_id gc_msgty_success '035' lv_v1 space space.
+    cv_count = cv_count + 1.
+
+    READ TABLE gt_alv ASSIGNING FIELD-SYMBOL(<ls_alv>)
+      WITH KEY file_id = ls_data-file_id line_id = ls_data-line_id.
+    IF sy-subrc = 0.
+      <ls_alv>-export_file  = ls_data-export_file.
+      <ls_alv>-export_date  = ls_data-export_date.
+      <ls_alv>-export_time  = ls_data-export_time.
+      <ls_alv>-export_user  = ls_data-export_user.
+      <ls_alv>-export_count = ls_data-export_count.
+      <ls_alv>-sel          = abap_false.
+      PERFORM set_icons CHANGING <ls_alv>.
+    ENDIF.
+  ENDLOOP.
+
+  PERFORM flush_log.
+  COMMIT WORK.
+
+ENDFORM.

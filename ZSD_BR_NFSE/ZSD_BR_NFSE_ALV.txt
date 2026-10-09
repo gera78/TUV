@@ -1,0 +1,594 @@
+*---------------------------------------------------------------------*
+* Include   ZSD_BR_NFSE_ALV                                           *
+*---------------------------------------------------------------------*
+* Date:                 09.10.2026                                    *
+* Developer:            Renato Santos                                 *
+* IT Responsible:       Renato Santos                                 *
+* Business Responsible: Juliana Reimberg                              *
+*---------------------------------------------------------------------*
+* Functional description                                              *
+* SAP List Viewer (CL_SALV_TABLE) output shared by both programs:     *
+*   RESULT - lines of the file just processed (option 1)              *
+*   LOG    - execution log (option 2)                                 *
+*   EXPORT - lines to tick for the output file (option 3)             *
+* Traffic lights: S green, S with warnings yellow, E red, cancelled   *
+* NF grey, V (validate only) checked. DOCNUM is a hotspot to J1B3N.   *
+* Double click shows every message of the line in a popup.           *
+* Custom GUI statuses (copies of SALV_STANDARD, see DDIC spec):       *
+*   ZNFSE_EXPORT - adds SELALL, DESALL, EXPORT                        *
+*   ZNFSE_LOG    - adds REPROC (admin program only)                   *
+*---------------------------------------------------------------------*
+* Authorization logic                                                 *
+* J1B3N is called WITH AUTHORITY-CHECK. Log and export selections     *
+* drop company codes without F_BKPF_BUK display (ACTVT 03).           *
+*---------------------------------------------------------------------*
+* Change history                                                      *
+* 09.10.2026  Renato Santos                                           *
+* Initial version.                                                    *
+*---------------------------------------------------------------------*
+
+*&---------------------------------------------------------------------*
+*&      Form  DISPLAY_RESULT
+*&---------------------------------------------------------------------*
+* Option 1 - lines of the processed file.
+*----------------------------------------------------------------------*
+FORM display_result.
+
+  DATA lt_files TYPE gty_file_tab.
+
+  APPEND gs_file TO lt_files.
+  PERFORM fill_alv USING lt_files gt_data.
+* File-level messages (layout, lock, cancel) as a line of their own
+  PERFORM add_file_level_rows USING lt_files.
+  PERFORM display_alv USING gc_mode_result.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  DISPLAY_LOG
+*&---------------------------------------------------------------------*
+* Option 2 - files by the file criteria, then their lines by the line
+* criteria. A message-number filter keeps only lines that have it.
+* File-level messages (line 000000) appear as a line of their own.
+*----------------------------------------------------------------------*
+FORM display_log.
+
+  DATA: lt_files TYPE gty_file_tab,
+        lt_data  TYPE gty_data_tab,
+        lv_ok    TYPE abap_bool.
+
+  SELECT * FROM zsd_br_nfse_file
+    WHERE bukrs     IN @s_lbukrs
+      AND branch    IN @s_lbranc
+      AND file_id   IN @s_lfile
+      AND exec_date IN @s_ldate
+      AND exec_user IN @s_luser
+      AND status    IN @s_lfstat
+    INTO TABLE @lt_files.
+
+* Company codes without display authorization are dropped
+  LOOP AT lt_files INTO DATA(ls_file).
+    PERFORM authority_ok USING ls_file-bukrs '03' CHANGING lv_ok.
+    IF lv_ok = abap_false.
+      DELETE lt_files.
+    ENDIF.
+  ENDLOOP.
+  IF lt_files IS INITIAL.
+    MESSAGE s042(zsd_br_nfse_msg) DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+
+  SELECT * FROM zsd_br_nfse_data
+    FOR ALL ENTRIES IN @lt_files
+    WHERE file_id    = @lt_files-file_id
+      AND status     IN @s_llstat
+      AND kunnr      IN @s_lkunnr
+      AND rps_number IN @s_lrps
+      AND docnum     IN @s_ldocn
+    INTO TABLE @lt_data.
+
+  IF p_lerr = abap_true.
+    DELETE lt_data WHERE status <> gc_line_error.
+  ENDIF.
+
+  IF s_lmsgno[] IS NOT INITIAL AND lt_data IS NOT INITIAL.
+    SELECT DISTINCT file_id, line_id FROM zsd_br_nfse_log
+      FOR ALL ENTRIES IN @lt_data
+      WHERE file_id = @lt_data-file_id
+        AND line_id = @lt_data-line_id
+        AND msgid   = @gc_msgid
+        AND msgno   IN @s_lmsgno
+      INTO TABLE @DATA(lt_with_msg).
+    LOOP AT lt_data INTO DATA(ls_data).
+      IF NOT line_exists( lt_with_msg[ file_id = ls_data-file_id line_id = ls_data-line_id ] ).
+        DELETE lt_data.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+  PERFORM fill_alv USING lt_files lt_data.
+
+* Without line filters, file-level messages are shown too
+  IF s_llstat[] IS INITIAL AND s_lkunnr[] IS INITIAL AND s_lrps[] IS INITIAL
+     AND s_ldocn[] IS INITIAL AND s_lmsgno[] IS INITIAL.
+    PERFORM add_file_level_rows USING lt_files.
+  ENDIF.
+
+  IF gt_alv IS INITIAL.
+    MESSAGE s042(zsd_br_nfse_msg) DISPLAY LIKE 'E'.
+    RETURN.
+  ENDIF.
+  SORT gt_alv BY file_id DESCENDING line_id ASCENDING.
+  PERFORM display_alv USING gc_mode_log.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  FILL_ALV
+*&---------------------------------------------------------------------*
+* Builds GT_ALV from files + lines: icons, first message (error before
+* warning before success), message count, NF data from J_1BNFDOC.
+*----------------------------------------------------------------------*
+FORM fill_alv USING ut_files TYPE gty_file_tab
+                    ut_data  TYPE gty_data_tab.
+
+  DATA: ls_alv TYPE gty_alv,
+        lt_log TYPE gty_log_tab.
+
+  CLEAR gt_alv.
+
+  IF ut_data IS NOT INITIAL.
+    SELECT * FROM zsd_br_nfse_log
+      FOR ALL ENTRIES IN @ut_data
+      WHERE file_id = @ut_data-file_id
+        AND line_id = @ut_data-line_id
+      INTO TABLE @lt_log.
+    SORT lt_log BY file_id line_id log_item.
+
+    SELECT docnum, nfenum, authcod, authdat, authtime, cancel FROM j_1bnfdoc
+      FOR ALL ENTRIES IN @ut_data
+      WHERE docnum = @ut_data-docnum
+      INTO TABLE @DATA(lt_nf).
+  ENDIF.
+
+  LOOP AT ut_data INTO DATA(ls_data).
+    CLEAR ls_alv.
+    MOVE-CORRESPONDING ls_data TO ls_alv.
+
+    READ TABLE ut_files INTO DATA(ls_file) WITH KEY file_id = ls_data-file_id.
+    IF sy-subrc = 0.
+      ls_alv-file_status = ls_file-status.
+      ls_alv-file_name   = ls_file-file_name.
+      ls_alv-exec_date   = ls_file-exec_date.
+      ls_alv-exec_user   = ls_file-exec_user.
+      ls_alv-bukrs       = ls_file-bukrs.
+      ls_alv-branch      = ls_file-branch.
+    ENDIF.
+
+    IF ls_data-docnum IS NOT INITIAL.
+      READ TABLE lt_nf INTO DATA(ls_nf) WITH KEY docnum = ls_data-docnum.
+      IF sy-subrc = 0.
+        ls_alv-nfenum    = ls_nf-nfenum.
+        ls_alv-authcod   = ls_nf-authcod.
+        ls_alv-authdat   = ls_nf-authdat.
+        ls_alv-authtime  = ls_nf-authtime.
+        ls_alv-cancelled = ls_nf-cancel.
+      ENDIF.
+    ENDIF.
+    ls_alv-situation = COND #( WHEN ls_data-outside_sp_flag = gc_yes THEN 'F' ELSE 'T' ).
+
+*   Messages: count, warnings, the most relevant one as text
+    DATA(lv_first_e) = ``.
+    DATA(lv_first_w) = ``.
+    DATA(lv_first_s) = ``.
+    LOOP AT lt_log INTO DATA(ls_log) WHERE file_id = ls_data-file_id
+                                       AND line_id = ls_data-line_id.
+      ls_alv-msg_count = ls_alv-msg_count + 1.
+      CASE ls_log-msgty.
+        WHEN gc_msgty_error.
+          IF lv_first_e IS INITIAL.
+            lv_first_e = |{ ls_log-msgno } { ls_log-message }|.
+          ENDIF.
+        WHEN gc_msgty_warning.
+          ls_alv-has_warning = abap_true.
+          IF lv_first_w IS INITIAL.
+            lv_first_w = |{ ls_log-msgno } { ls_log-message }|.
+          ENDIF.
+        WHEN OTHERS.
+          IF lv_first_s IS INITIAL.
+            lv_first_s = |{ ls_log-msgno } { ls_log-message }|.
+          ENDIF.
+      ENDCASE.
+    ENDLOOP.
+    ls_alv-message = COND #( WHEN lv_first_e IS NOT INITIAL THEN lv_first_e
+                             WHEN lv_first_w IS NOT INITIAL THEN lv_first_w
+                             ELSE lv_first_s ).
+    IF ls_alv-msg_count > 1.
+      ls_alv-message = |({ ls_alv-msg_count }) { ls_alv-message }|.
+    ENDIF.
+
+    PERFORM set_icons CHANGING ls_alv.
+    APPEND ls_alv TO gt_alv.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  ADD_FILE_LEVEL_ROWS
+*&---------------------------------------------------------------------*
+* One row per file that has file-level messages (LINE_ID 000000).
+*----------------------------------------------------------------------*
+FORM add_file_level_rows USING ut_files TYPE gty_file_tab.
+
+  DATA ls_alv TYPE gty_alv.
+
+  IF ut_files IS INITIAL.
+    RETURN.
+  ENDIF.
+  SELECT * FROM zsd_br_nfse_log
+    FOR ALL ENTRIES IN @ut_files
+    WHERE file_id = @ut_files-file_id
+      AND line_id = '000000'
+    INTO TABLE @DATA(lt_log).
+  SORT lt_log BY file_id log_item.
+
+  LOOP AT ut_files INTO DATA(ls_file).
+    READ TABLE lt_log INTO DATA(ls_log) WITH KEY file_id = ls_file-file_id.
+    CHECK sy-subrc = 0.
+    CLEAR ls_alv.
+    ls_alv-file_id     = ls_file-file_id.
+    ls_alv-file_status = ls_file-status.
+    ls_alv-file_name   = ls_file-file_name.
+    ls_alv-exec_date   = ls_file-exec_date.
+    ls_alv-exec_user   = ls_file-exec_user.
+    ls_alv-bukrs       = ls_file-bukrs.
+    ls_alv-branch      = ls_file-branch.
+    ls_alv-status      = COND #( WHEN ls_log-msgty = gc_msgty_error THEN gc_line_error
+                                 ELSE gc_line_new ).
+    ls_alv-message     = |{ ls_log-msgno } { ls_log-message }|.
+    ls_alv-msg_count   = REDUCE i( INIT n = 0 FOR l IN lt_log WHERE ( file_id = ls_file-file_id )
+                                   NEXT n = n + 1 ).
+    IF ls_alv-msg_count > 1.
+      ls_alv-message = |({ ls_alv-msg_count }) { ls_alv-message }|.
+    ENDIF.
+    PERFORM set_icons CHANGING ls_alv.
+    APPEND ls_alv TO gt_alv.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SET_ICONS
+*&---------------------------------------------------------------------*
+FORM set_icons CHANGING cs_alv TYPE gty_alv.
+
+  cs_alv-file_icon = SWITCH #( cs_alv-file_status
+                       WHEN gc_file_success THEN icon_led_green
+                       WHEN gc_file_partial THEN icon_led_yellow
+                       WHEN gc_file_error   THEN icon_led_red ).
+
+  cs_alv-line_icon = COND #(
+    WHEN cs_alv-status = gc_line_success AND cs_alv-cancelled IS NOT INITIAL THEN icon_led_inactive
+    WHEN cs_alv-status = gc_line_success AND cs_alv-has_warning = abap_true  THEN icon_led_yellow
+    WHEN cs_alv-status = gc_line_success                                     THEN icon_led_green
+    WHEN cs_alv-status = gc_line_error                                       THEN icon_led_red
+    WHEN cs_alv-status = gc_line_validated                                   THEN icon_checked
+    ELSE icon_space ).
+
+  cs_alv-export_icon = COND #( WHEN cs_alv-export_count > 0 THEN icon_export ELSE icon_space ).
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  DISPLAY_ALV
+*&---------------------------------------------------------------------*
+* Full-screen ALV over GT_ALV. Only the important columns are visible;
+* all others can be added with "Change Layout".
+*----------------------------------------------------------------------*
+FORM display_alv USING uv_mode TYPE char10.
+
+  DATA: lo_columns TYPE REF TO cl_salv_columns_table,
+        lo_column  TYPE REF TO cl_salv_column_table,
+        lt_visible TYPE gty_fieldname_tab,
+        ls_key     TYPE salv_s_layout_key.
+
+  gv_alv_mode = uv_mode.
+
+  TRY.
+      cl_salv_table=>factory( IMPORTING r_salv_table = go_alv
+                              CHANGING  t_table      = gt_alv ).
+    CATCH cx_salv_msg INTO DATA(lx_msg).
+      MESSAGE lx_msg TYPE 'E'.
+  ENDTRY.
+
+* Toolbar: own GUI status where the list has own functions
+  CASE uv_mode.
+    WHEN gc_mode_export.
+      go_alv->set_screen_status( pfstatus      = 'ZNFSE_EXPORT'
+                                 report        = sy-repid
+                                 set_functions = cl_salv_table=>c_functions_all ).
+    WHEN gc_mode_log.
+      IF gv_is_admin = abap_true.
+        go_alv->set_screen_status( pfstatus      = 'ZNFSE_LOG'
+                                   report        = sy-repid
+                                   set_functions = cl_salv_table=>c_functions_all ).
+        go_alv->get_selections( )->set_selection_mode( if_salv_c_selection_mode=>single ).
+      ELSE.
+        go_alv->get_functions( )->set_all( abap_true ).
+      ENDIF.
+    WHEN OTHERS.
+      go_alv->get_functions( )->set_all( abap_true ).
+  ENDCASE.
+
+* User layouts
+  ls_key-report = sy-repid.
+  ls_key-handle = uv_mode(4).
+  go_alv->get_layout( )->set_key( ls_key ).
+  go_alv->get_layout( )->set_save_restriction( if_salv_c_layout=>restrict_none ).
+  go_alv->get_display_settings( )->set_striped_pattern( abap_true ).
+
+* Columns: hide all, then show the important ones per list
+  lo_columns = go_alv->get_columns( ).
+  lo_columns->set_optimize( abap_true ).
+  LOOP AT lo_columns->get( ) INTO DATA(ls_col).
+    ls_col-r_column->set_visible( abap_false ).
+  ENDLOOP.
+  TRY.
+      lo_columns->get_column( 'T_COLOR' )->set_technical( abap_true ).
+      lo_columns->get_column( 'MANDT' )->set_technical( abap_true ).
+      lo_columns->get_column( 'EXPORTABLE' )->set_technical( abap_true ).
+      lo_columns->get_column( 'HAS_WARNING' )->set_technical( abap_true ).
+    CATCH cx_salv_not_found.
+      " column not part of this structure - nothing to hide
+  ENDTRY.
+
+  CASE uv_mode.
+    WHEN gc_mode_result.
+      lt_visible = VALUE #( ( 'LINE_ICON' ) ( 'LINE_ID' ) ( 'KUNNR' ) ( 'CUSTOMER_SHORT_NAME' )
+                            ( 'RPS_NUMBER' ) ( 'SERVICE_DATE' ) ( 'SERVICE_AMOUNT' ) ( 'ISS_AMT' )
+                            ( 'SERVICE_CODE' ) ( 'DOCNUM' ) ( 'CANCELLED' ) ( 'MESSAGE' ) ).
+    WHEN gc_mode_log.
+      lt_visible = VALUE #( ( 'FILE_ICON' ) ( 'FILE_ID' ) ( 'FILE_NAME' ) ( 'EXEC_DATE' )
+                            ( 'EXEC_USER' ) ( 'LINE_ICON' ) ( 'LINE_ID' ) ( 'KUNNR' )
+                            ( 'RPS_NUMBER' ) ( 'SERVICE_AMOUNT' ) ( 'DOCNUM' ) ( 'CANCELLED' )
+                            ( 'MESSAGE' ) ).
+    WHEN gc_mode_export.
+      lt_visible = VALUE #( ( 'SEL' ) ( 'EXPORT_ICON' ) ( 'RPS_NUMBER' ) ( 'NFENUM' )
+                            ( 'SERVICE_DATE' ) ( 'KUNNR' ) ( 'TAKER_NAME' ) ( 'SERVICE_AMOUNT' )
+                            ( 'ISS_AMT' ) ( 'SITUATION' ) ( 'SERVICE_CODE' ) ( 'DOCNUM' )
+                            ( 'NFSE_STATE' ) ( 'EXPORT_FILE' ) ( 'EXPORT_DATE' ) ( 'EXPORT_USER' )
+                            ( 'EXPORT_COUNT' ) ).
+  ENDCASE.
+
+  DATA(lv_pos) = 0.
+  LOOP AT lt_visible INTO DATA(lv_name).
+    TRY.
+        lo_column ?= lo_columns->get_column( lv_name ).
+        lo_column->set_visible( abap_true ).
+        lv_pos = lv_pos + 1.
+        lo_columns->set_column_position( columnname = lv_name position = lv_pos ).
+      CATCH cx_salv_not_found.
+        " column not present - skip
+    ENDTRY.
+  ENDLOOP.
+
+  PERFORM set_column_texts USING lo_columns.
+
+  TRY.
+*     Icons, hotspot on the NF document, checkbox on the export list
+      CAST cl_salv_column_table( lo_columns->get_column( 'LINE_ICON' ) )->set_icon( abap_true ).
+      CAST cl_salv_column_table( lo_columns->get_column( 'FILE_ICON' ) )->set_icon( abap_true ).
+      CAST cl_salv_column_table( lo_columns->get_column( 'EXPORT_ICON' ) )->set_icon( abap_true ).
+      CAST cl_salv_column_table( lo_columns->get_column( 'DOCNUM' ) )->set_cell_type( if_salv_c_cell_type=>hotspot ).
+      CAST cl_salv_column_table( lo_columns->get_column( 'SEL' ) )->set_cell_type( if_salv_c_cell_type=>checkbox_hotspot ).
+    CATCH cx_salv_not_found.
+      " not part of this list
+  ENDTRY.
+
+* Totals of amounts
+  TRY.
+      go_alv->get_aggregations( )->add_aggregation( columnname = 'SERVICE_AMOUNT' ).
+      go_alv->get_aggregations( )->add_aggregation( columnname = 'ISS_AMT' ).
+    CATCH cx_salv_not_found cx_salv_data_error cx_salv_existing.
+      " totals are a convenience only
+  ENDTRY.
+
+  IF uv_mode = gc_mode_result.
+    PERFORM set_result_header.
+  ENDIF.
+
+* Events
+  DATA(lo_events) = go_alv->get_event( ).
+  SET HANDLER lcl_alv_events=>on_link_click   FOR lo_events.
+  SET HANDLER lcl_alv_events=>on_double_click FOR lo_events.
+  SET HANDLER lcl_alv_events=>on_user_command FOR lo_events.
+
+  go_alv->display( ).
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SET_COLUMN_TEXTS
+*&---------------------------------------------------------------------*
+* Texts for columns that have no data element of their own.
+*----------------------------------------------------------------------*
+FORM set_column_texts USING uo_columns TYPE REF TO cl_salv_columns_table.
+
+  DATA lo_col TYPE REF TO cl_salv_column.
+
+  TYPES: BEGIN OF lty_text,
+           name TYPE lvc_fname,
+           text TYPE scrtext_l,
+         END OF lty_text.
+  DATA lt_text TYPE STANDARD TABLE OF lty_text WITH DEFAULT KEY.
+
+  lt_text = VALUE #( ( name = 'SEL'         text = TEXT-c01 )
+                     ( name = 'FILE_ICON'   text = TEXT-c02 )
+                     ( name = 'LINE_ICON'   text = TEXT-c03 )
+                     ( name = 'EXPORT_ICON' text = TEXT-c04 )
+                     ( name = 'MESSAGE'     text = TEXT-c05 )
+                     ( name = 'MSG_COUNT'   text = TEXT-c06 )
+                     ( name = 'SITUATION'   text = TEXT-c07 )
+                     ( name = 'NFSE_STATE'  text = TEXT-c08 )
+                     ( name = 'CANCELLED'   text = TEXT-c09 ) ).
+
+  LOOP AT lt_text INTO DATA(ls_text).
+    TRY.
+        lo_col = uo_columns->get_column( ls_text-name ).
+        lo_col->set_long_text( ls_text-text ).
+        lo_col->set_medium_text( CONV #( ls_text-text ) ).
+        lo_col->set_short_text( CONV #( ls_text-text ) ).
+      CATCH cx_salv_not_found.
+        " not part of this list
+    ENDTRY.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SET_RESULT_HEADER
+*&---------------------------------------------------------------------*
+* Header of the result list: file, company / business place / NF
+* type, execution, file status and counters.
+*----------------------------------------------------------------------*
+FORM set_result_header.
+
+  DATA lo_grid TYPE REF TO cl_salv_form_layout_grid.
+
+  CREATE OBJECT lo_grid.
+  lo_grid->create_label( row = 1 column = 1 text = TEXT-h01 ).
+  lo_grid->create_text(  row = 1 column = 2 text = |{ gs_file-file_id } - { gs_file-file_name }| ).
+  lo_grid->create_label( row = 2 column = 1 text = TEXT-h02 ).
+  lo_grid->create_text(  row = 2 column = 2 text = |{ gs_file-bukrs } / { gs_file-branch } / { gs_file-nftype }| ).
+  lo_grid->create_label( row = 3 column = 1 text = TEXT-h03 ).
+  lo_grid->create_text(  row = 3 column = 2 text = |{ gs_file-exec_user } { gs_file-exec_date DATE = USER } { gs_file-exec_time TIME = USER }| ).
+  lo_grid->create_label( row = 4 column = 1 text = TEXT-h04 ).
+  lo_grid->create_text(  row = 4 column = 2
+                         text = |{ gs_file-status } - { gs_file-line_count } / { gs_file-success_count } / { gs_file-error_count }| ).
+  go_alv->set_top_of_list( lo_grid ).
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SHOW_LINE_MESSAGES
+*&---------------------------------------------------------------------*
+* Popup with every message of one line (double click).
+*----------------------------------------------------------------------*
+FORM show_line_messages USING uv_file_id TYPE zsd_br_nfse_file_id
+                              uv_line_id TYPE zsd_br_nfse_line_id.
+
+  TYPES: BEGIN OF lty_msg,
+           icon     TYPE icon_d,
+           log_item TYPE zsd_br_nfse_log_item,
+           msgid    TYPE symsgid,
+           msgno    TYPE symsgno,
+           message  TYPE bapi_msg,
+           log_date TYPE datum,
+           log_time TYPE uzeit,
+         END OF lty_msg.
+  DATA: lt_msg   TYPE STANDARD TABLE OF lty_msg,
+        lo_popup TYPE REF TO cl_salv_table.
+
+  SELECT * FROM zsd_br_nfse_log
+    WHERE file_id = @uv_file_id
+      AND line_id = @uv_line_id
+    ORDER BY log_item
+    INTO TABLE @DATA(lt_log).
+
+  lt_msg = VALUE #( FOR ls IN lt_log
+                    ( icon     = SWITCH #( ls-msgty WHEN gc_msgty_error   THEN icon_led_red
+                                                    WHEN gc_msgty_warning THEN icon_led_yellow
+                                                    WHEN gc_msgty_success THEN icon_led_green
+                                                    ELSE icon_information )
+                      log_item = ls-log_item
+                      msgid    = ls-msgid
+                      msgno    = ls-msgno
+                      message  = ls-message
+                      log_date = ls-log_date
+                      log_time = ls-log_time ) ).
+
+  TRY.
+      cl_salv_table=>factory( IMPORTING r_salv_table = lo_popup
+                              CHANGING  t_table      = lt_msg ).
+      lo_popup->set_screen_popup( start_column = 5  end_column = 160
+                                  start_line   = 3  end_line   = 15 ).
+      lo_popup->get_display_settings( )->set_list_header(
+        |{ TEXT-p06 } { uv_file_id } / { uv_line_id }| ).
+      lo_popup->get_columns( )->set_optimize( abap_true ).
+      CAST cl_salv_column_table( lo_popup->get_columns( )->get_column( 'ICON' ) )->set_icon( abap_true ).
+      lo_popup->display( ).
+    CATCH cx_salv_msg cx_salv_not_found.
+      " nothing to show
+  ENDTRY.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SHOW_NF
+*&---------------------------------------------------------------------*
+* Hotspot on DOCNUM: J1B3N for that document, with the user's own
+* authorization check.
+*----------------------------------------------------------------------*
+FORM show_nf USING uv_docnum TYPE j_1bdocnum.
+
+  IF uv_docnum IS INITIAL.
+    RETURN.
+  ENDIF.
+  SET PARAMETER ID gc_pid_docnum FIELD uv_docnum.
+  CALL TRANSACTION gc_tcode_disp WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* Local class LCL_ALV_EVENTS - implementation
+*---------------------------------------------------------------------*
+CLASS lcl_alv_events IMPLEMENTATION.
+
+  METHOD on_link_click.
+    READ TABLE gt_alv ASSIGNING FIELD-SYMBOL(<ls_alv>) INDEX row.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+    CASE column.
+      WHEN 'DOCNUM'.
+        PERFORM show_nf USING <ls_alv>-docnum.
+      WHEN 'SEL'.
+*       Only lines with an authorized NFS-e can be ticked
+        IF <ls_alv>-exportable = abap_true.
+          <ls_alv>-sel = xsdbool( <ls_alv>-sel = abap_false ).
+          go_alv->refresh( refresh_mode = if_salv_c_refresh=>soft ).
+        ENDIF.
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD on_double_click.
+    READ TABLE gt_alv INTO DATA(ls_alv) INDEX row.
+    IF sy-subrc = 0.
+      PERFORM show_line_messages USING ls_alv-file_id ls_alv-line_id.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD on_user_command.
+    CASE e_salv_function.
+      WHEN gc_fc_select_all OR gc_fc_deselect_all.
+        LOOP AT gt_alv ASSIGNING FIELD-SYMBOL(<ls_alv>) WHERE exportable = abap_true.
+          <ls_alv>-sel = xsdbool( e_salv_function = gc_fc_select_all ).
+        ENDLOOP.
+        go_alv->refresh( refresh_mode = if_salv_c_refresh=>soft ).
+      WHEN gc_fc_export.
+        PERFORM export_csv.
+        go_alv->refresh( refresh_mode = if_salv_c_refresh=>soft ).
+      WHEN gc_fc_reprocess.
+        DATA(lt_rows) = go_alv->get_selections( )->get_selected_rows( ).
+        READ TABLE lt_rows INTO DATA(lv_row) INDEX 1.
+        IF sy-subrc <> 0.
+          MESSAGE s043(zsd_br_nfse_msg) DISPLAY LIKE 'E'.
+          RETURN.
+        ENDIF.
+        READ TABLE gt_alv INTO DATA(ls_alv) INDEX lv_row.
+*       Reprocessing lives in the admin-only include ZSD_BR_NFSE_F02_ADM
+        PERFORM ('REPROCESS_FILE') IN PROGRAM (sy-repid) IF FOUND USING ls_alv-file_id.
+    ENDCASE.
+  ENDMETHOD.
+
+ENDCLASS.
