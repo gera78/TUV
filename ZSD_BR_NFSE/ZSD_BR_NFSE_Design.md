@@ -7,10 +7,10 @@
 | Projeto | TÜV – Criação de NF Writer a partir de planilha de NFS-e |
 | Empresa / Local de negócio | 5596 / 0001 (padrão) |
 | Ambiente | SAP S/4HANA (notas da Reforma Tributária em implantação) |
-| Versão | 0.2 – Sugestões aprovadas (P_TEST, mensagens 017–025); mockup publicado |
+| Versão | 0.3 – Verificação de duplicidade com popup, bloqueio, LUW única, LGPD/expurgo, reprocessamento, avisos (W), data de emissão |
 | Data | 09.10.2026 |
 | Developer / IT Responsible / Business Responsible | `<TBD>` |
-| Status | Em revisão → próximo passo: Mockup → aprovação → codificação |
+| Status | Em revisão do mockup → aprovação → codificação |
 
 > Convenções deste documento: ✅ decidido · ⏳ pendente · 💡 sugestão (aguarda aprovação).
 > Nomes técnicos, textos de tela e mensagens em inglês (guideline TÜV, itens 11 e 16).
@@ -23,8 +23,10 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
 
 **Fora de escopo**
 - Documento contábil/financeiro: **não é criado** (✅). Todos os impostos vão apenas como linhas de imposto do item da NF.
-- Geração do TXT para a prefeitura (aba "gerar txt") – evolução futura 💡.
+- Geração do TXT para a prefeitura (aba "gerar txt") – evolução futura.
+- NFS-e Padrão Nacional / transmissão via SAP DRC – evolução futura; o desenho não a impede.
 - Execução em background (o upload é via SAP GUI).
+- Agrupar várias linhas numa única NF: regra é **1 linha = 1 NF** (⏳ confirmar com fiscal, P12).
 
 ---
 
@@ -34,33 +36,46 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
  Tela de seleção (Opção 1)
         │
         ▼
- [1] Authority check (BUKRS / J1B1N)
+ [1] Authority check (BUKRS / J1B1N) + local de negócio pertence à empresa (031) + NF type de saída sem contabilização (032)
         │
         ▼
  [2] Upload binário (GUI_UPLOAD) → CL_FDT_XL_SPREADSHEET → aba SHEET_NAME
         │
         ▼
- [3] Validação de layout (msg 001) ── erro ──► FILE status E + LOG (linha 0) ──► ALV
+ [3] Validação de layout (001) e limite de linhas MAX_LINES (033) ── erro ──► FILE status E + LOG (linha 0) ──► ALV
         │ ok
         ▼
  [4] FILE_ID (range ZNFSE_FILE) → grava ZSD_BR_NFSE_FILE + ZSD_BR_NFSE_DATA (status ' ') → COMMIT
         │
         ▼
- [5] Validações por linha (002–025) → cada erro grava LOG; linha com erro → status E
+ [5] Validações por linha (E bloqueia · W só avisa) → LOG; linha com erro → status E
         │
         ▼
- [6] Linhas sem erro → monta BAPI → BAPI_J_1B_NF_CREATEFROMDATA
-        │                   ├─ sucesso → COMMIT (WAIT) → DATA: DOCNUM + status S; LOG msg 022
-        │                   └─ erro    → ROLLBACK → DATA: status E; LOG mensagens E/A da BAPI
+ [6] Verificação de duplicidade (seção 10): critério A (RPS) e B (conteúdo)
+        │   encontrou? → POPUP com a lista
+        │        ├─ "Continue without duplicates" → duplicadas: status E (017/026); demais seguem
+        │        └─ "Cancel processing"          → todas as linhas E + LOG 027; arquivo E; nenhuma NF
+        │   (Validate only: popup apenas informativo)
         ▼
- [7] Status do arquivo: todas S → S · todas E → E · senão → P (+ contadores)
+ [7] Bloqueio EZSD_BR_NFSE (BUKRS + BRANCH) ── ocupado ──► msg 030, nada é criado
         │
         ▼
- [8] ALV de resultado (semáforo + hotspot DOCNUM → J1B3N)
+ [8] Para cada linha OK (com indicador de progresso):
+        BAPI_J_1B_NF_CREATEFROMDATA
+          ├─ sucesso → UPDATE DATA (DOCNUM, S) + LOG 022 → BAPI_TRANSACTION_COMMIT (WAIT)  ← mesma LUW
+          └─ erro    → BAPI_TRANSACTION_ROLLBACK → DATA E + LOG (mensagens E/A da BAPI) → COMMIT WORK
+        │
+        ▼
+ [9] Desbloqueio · status do arquivo: todas S → S · todas E → E · senão → P (+ contadores)
+        │
+        ▼
+ [10] ALV de resultado (semáforo + hotspot DOCNUM → J1B3N)
 ```
 
-- As validações de uma linha **não param no primeiro erro**: todos os erros da linha são gravados.
-- Cada NF é confirmada individualmente (COMMIT por linha) – um erro numa linha não desfaz as anteriores.
+- As validações de uma linha **não param no primeiro erro**: todos os erros e avisos da linha são gravados.
+- Cada NF é confirmada individualmente – um erro numa linha não desfaz as anteriores.
+- **LUW única** ✅: o status S e o DOCNUM são gravados **antes** do `BAPI_TRANSACTION_COMMIT`, de modo que NF e log são confirmados juntos (nunca existe NF sem registro – evita reemissão).
+- **Validate only (`P_TEST`)**: executa os passos 1–6 e grava o log; linhas válidas ficam com status V; não há bloqueio nem BAPI.
 
 ---
 
@@ -71,14 +86,14 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
 | Objeto | Tipo | Usado por | Conteúdo |
 |---|---|---|---|
 | `ZSD_BR_NFSE_UPLOAD` | Report | Usuário | Opções 1 e 2 |
-| `ZSD_BR_NFSE_UPLOAD_ADM` | Report | Admin | Opções 1, 2 e 3 |
+| `ZSD_BR_NFSE_UPLOAD_ADM` | Report | Admin | Opções 1, 2, 3 (parâmetros) e 4 (expurgo de logs) |
 | `ZSD_BR_NFSE_TOP` | Include | Ambos | Tipos, dados globais, constantes, classes ALV de evento |
 | `ZSD_BR_NFSE_SCR_COM` | Include | Ambos | Blocos de parâmetros das opções 1 e 2 |
 | `ZSD_BR_NFSE_SCR` | Include | Usuário | Radio buttons (1, 2) + eventos de tela |
 | `ZSD_BR_NFSE_SCR_ADM` | Include | Admin | Radio buttons (1, 2, 3) + eventos de tela |
 | `ZSD_BR_NFSE_F01` | Include | Ambos | Autorização, upload, gravação, validações, BAPI, status |
 | `ZSD_BR_NFSE_ALV` | Include | Ambos | ALV de processamento e de log, semáforo, hotspot, popup de mensagens |
-| `ZSD_BR_NFSE_F02_ADM` | Include | Admin | Manutenção de parâmetros |
+| `ZSD_BR_NFSE_F02_ADM` | Include | Admin | Manutenção de parâmetros, expurgo de logs, reprocessamento de erros |
 
 > O radio group precisa ser declarado de uma só vez, por isso há um include SCR por programa; os blocos de parâmetros ficam no `SCR_COM`.
 > Estilo: FORMs (consistente com o projeto ICMS), ALV com `CL_SALV_TABLE`.
@@ -91,6 +106,7 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
 | Domínios / elementos de dados | SE11 | ver seção 6 |
 | Classe de mensagem | SE91 | `ZSD_BR_NFSE_MSG` |
 | Range de numeração | SNRO | `ZNFSE_FILE` (intervalo 01, 10 dígitos) |
+| Objeto de bloqueio | SE11 | `EZSD_BR_NFSE` (tabela `ZSD_BR_NFSE_FILE`, argumentos BUKRS + BRANCH; campos adicionados à tabela de bloqueio via estrutura) |
 | Visão de manutenção (TMG) | SE54 | `ZSD_BR_NFSE_PARM` (grupo de funções `ZSD_BR_NFSE_PARM`) |
 | Transações | SE93 | `ZNFSE` (usuário), `ZNFSE_ADM` (admin) |
 
@@ -113,9 +129,12 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
 |---|---|---|---|---|
 | `P_BUKRS` | `BUKRS` | 5596 | Sim | Authority check |
 | `P_BRANCH` | `J_1BBRANC_` | 0001 | Sim | Validado contra `J_1BBRANCH` |
-| `P_NFTYPE` | `J_1BNFTYPE` | Z1 | Sim | Validado contra `J_1BAA` |
+| `P_NFTYPE` | `J_1BNFTYPE` | Z1 | Sim | Validado contra `J_1BAA`: saída, sem contabilização (032) |
+| `P_DOCDAT` | `J_1BDOCDAT` | SY-DATUM | Sim | Data de emissão. **Somente leitura no programa do usuário; editável no admin** (fechamento de mês) ⏳ validar com fiscal (P13) |
 | `P_FILE` | `STRING`/`RLGRAP-FILENAME` | – | Sim | F4: `CL_GUI_FRONTEND_SERVICES=>FILE_OPEN_DIALOG` (filtro *.xlsx;*.xlsm) |
 | `P_TEST` | Checkbox | vazio | Não | "Validate only (no NF creation)" ✅ – valida e grava log, sem chamar a BAPI |
+
+`P_BRANCH` precisa pertencer a `P_BUKRS` (`J_1BBRANCH`, msg 031).
 
 **Bloco "Log selection"** – visível só com `P_RLOG`
 
@@ -136,7 +155,20 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
 
 ### 4.2 Programa do admin (`ZNFSE_ADM`)
 
-Mesmos blocos do usuário + radio `P_RPARM` – "Maintain parameters". Com `P_RPARM` nenhum bloco de parâmetros é exibido; ao executar abre a manutenção da `ZSD_BR_NFSE_PARM` (seção 12).
+Mesmos blocos do usuário (com `P_DOCDAT` editável) + dois radios exclusivos do admin:
+
+| Radio | Texto | Tela |
+|---|---|---|
+| `P_RPARM` | Maintain parameters | Sem campos; executa a manutenção da `ZSD_BR_NFSE_PARM` (seção 13.1) |
+| `P_RPURG` | Purge old logs | Bloco "Purge" (abaixo) |
+
+**Bloco "Purge"** – visível só com `P_RPURG`
+
+| Parâmetro | Tipo | Padrão | Obs. |
+|---|---|---|---|
+| `P_PBUKRS` | `BUKRS` | 5596 | Obrigatório |
+| `P_PDATE` | `DATUM` | hoje − `LOG_RETENTION_YEARS` | Apaga arquivos com `EXEC_DATE` anterior a esta data |
+| `P_PTEST` | Checkbox | X | Simulação: só conta o que seria apagado |
 
 ---
 
@@ -149,6 +181,7 @@ Mesmos blocos do usuário + radio `P_RPARM` – "Maintain parameters". Com `P_RP
 | Opção 2 – ao exibir | `F_BKPF_BUK` – `ACTVT = 03` por BUKRS selecionado | Linhas de empresas sem autorização são removidas (mensagem informativa) |
 | Hotspot DOCNUM | `CALL TRANSACTION 'J1B3N' WITH AUTHORITY-CHECK` | Padrão SAP |
 | Opção 3 | Transação `ZNFSE_ADM` + `S_TABU_DIS` (grupo de autorização da tabela) | Padrão SAP |
+| Opção 4 / "Reprocess errors" | Transação `ZNFSE_ADM` + `F_BKPF_BUK` (ACTVT 06 expurgo / 01 reprocessamento) | Mensagem 021 |
 
 ⏳ Confirmar na **SU24 da J1B1N** se existe objeto específico de NF (com BUKRS/ACTVT) que deva substituir ou complementar `F_BKPF_BUK`. ACTVT 01 = Create (TACT) ✅.
 
@@ -161,7 +194,7 @@ Mesmos blocos do usuário + radio `P_RPARM` – "Maintain parameters". Com `P_RP
 | Domínio | Tipo | Valores fixos |
 |---|---|---|
 | `ZSD_BR_NFSE_FILE_STATUS` | CHAR 1 | S = Success · P = Partially processed · E = Error |
-| `ZSD_BR_NFSE_LINE_STATUS` | CHAR 1 | ' ' = Not processed · S = Success · E = Error |
+| `ZSD_BR_NFSE_LINE_STATUS` | CHAR 1 | ' ' = Not processed · S = Success · E = Error · V = Validated (test run, sem NF) |
 | `ZSD_BR_NFSE_YES_NO` | CHAR 1 | S = Yes (Sim) · N = No (Não) – valores como vêm da planilha |
 | `ZSD_BR_NFSE_AMOUNT` | CURR 15,2 | – |
 | `ZSD_BR_NFSE_RATE` | DEC 7,4 | – (fração, ex. 0,0500) |
@@ -185,6 +218,9 @@ Mesmos blocos do usuário + radio `P_RPARM` – "Maintain parameters". Com `P_RP
 | ERROR_COUNT | | `ZSD_BR_NFSE_ERROR_COUNT` | INT4 | Lines with error |
 | STATUS | | `ZSD_BR_NFSE_FILE_STATUS` | CHAR 1 | File status |
 | TEST_RUN | | `ZSD_BR_NFSE_TEST_RUN` | CHAR 1 | Validation only (`P_TEST`) ✅ |
+| DOC_DATE | | `J_1BDOCDAT` | DATS | Data de emissão usada (`P_DOCDAT`) |
+| CANCEL_FLAG | | `ZSD_BR_NFSE_USER_CANCEL` | CHAR 1 | Processamento cancelado pelo usuário no popup de duplicidade |
+| 💡 FILE_CONTENT | | `XSTRING` (RAWSTRING) | – | **Opcional (sugestão 11)**: binário do arquivo original para auditoria |
 
 ### 6.3 `ZSD_BR_NFSE_DATA` – linhas da planilha (1 registro por linha)
 
@@ -297,7 +333,8 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | Método | `GUI_UPLOAD` (binário) → XSTRING → `CL_FDT_XL_SPREADSHEET` |
 | Aba | Parâmetro `SHEET_NAME` (padrão "Emissão NF - Ductor"); aba inexistente → msg 018 |
 | Linha 1 | Grupos (Destinatário / Imóvel-Obra / Tributário) – ignorada |
-| Linha 2 | Cabeçalho – validação de layout (msg 001): posição + texto de A até BB |
+| Linha 2 | Cabeçalho – validação de layout (msg 001): posição + texto de A até BB, **comparado sem espaços nas pontas, sem diferenciar maiúsculas/minúsculas e sem acentos** (ex.: "Nacional " = "NACIONAL") ✅ |
+| Limite | No máximo `MAX_LINES` linhas de dados (msg 033) |
 | Linha 3+ | Dados; linha considerada somente se **coluna B (Codigo SAP)** preenchida |
 | Coluna A | Ignorada (não gravada) |
 
@@ -358,6 +395,8 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | TAXGRP_REQ_03 | (vazio) | Não | Grupo 03 opcional |
 | ISS_TOLERANCE | 0.01 | Não | Tolerância da msg 013 (padrão 0,01) |
 | RPS_TARGET | TEXT | Não | Destino do RPS ⏳ (TEXT = última linha do texto) |
+| MAX_LINES | 500 | Não | Limite de linhas por arquivo (msg 033) |
+| LOG_RETENTION_YEARS | 5 | Não | Prazo de retenção do log (LGPD) – padrão do expurgo ⏳ validar com DPO (P14) |
 
 > Valores entre parênteses: a definir pelo consultor fiscal / configuração das notas da reforma.
 
@@ -369,8 +408,12 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 
 | Msg | Regra |
 |---|---|
+| 031 | Local de negócio não pertence à empresa (tela – antes do upload) |
+| 032 | NF type não é de saída ou gera contabilização (tela – antes do upload) |
 | 018 | Arquivo não pôde ser lido ou aba `SHEET_NAME` não existe |
 | 001 | Cabeçalho da linha 2 difere do padrão (posição/texto); informa a 1ª coluna divergente |
+| 033 | Arquivo excede `MAX_LINES` linhas |
+| 030 | Processamento bloqueado por outro usuário (BUKRS + BRANCH) – nenhuma NF criada; linhas permanecem com status ' ' para reprocessamento |
 
 **Nível linha** (todas executadas; cada falha grava LOG e linha → status E)
 
@@ -385,7 +428,7 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | 006 | Valor dos serviços ≤ 0 | I |
 | 007 | INSS + IRRF + CSLL + CBS ret. + IBS ret. + (ISS **se** ISS Retido = S) > valor dos serviços | I, L–Q, S |
 | 024 ✅ | Data de prestação vazia ou inválida | H |
-| 008 | Data de prestação > data de emissão (SY-DATUM) | H |
+| 008 | Data de prestação > data de emissão (`P_DOCDAT`) | H |
 | 009 | Discriminação dos serviços vazia | AH |
 | 010 | CBS retido > CBS devido | J, O |
 | 011 | IBS retido > IBS devido | K, P |
@@ -394,30 +437,65 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | 014 | Grupo marcado como obrigatório (`TAXGRP_REQ_nn`) sem nenhum valor > 0 (grupo 01: J/K · 02: L · 03: M–Q) ✅ | J–Q |
 | 015 | Prestação fora de SP = S e município vazio | T, V |
 | 016 | Município preenchido e 2 primeiros dígitos IBGE ≠ UF (tabela de 27 UFs) ou código ≠ 7 dígitos | V, W |
-| 017 ✅ | RPS já usado: processado com sucesso em outro arquivo ou repetido no mesmo arquivo. Chave: **BUKRS + BRANCH + RPS** ✅ | B, F |
+| 017 ✅ | Duplicidade critério A – ver seção 10 | F |
+| 026 ✅ | Duplicidade critério B – ver seção 10 | B, H, I, U |
 | 023 ✅ | Coluna de imposto com valor > 0 sem `TAXTYP_*` configurado | J–Q, S |
 | 025 ✅ | Parâmetro obrigatório não configurado (CFOP, TAXLW*, ITMTYP, MATUSE…) | – |
 
+**Avisos (tipo W – não bloqueiam; semáforo amarelo)** ✅
+
+| Msg | Regra | Colunas |
+|---|---|---|
+| 028 | Endereço/cidade/UF do tomador na planilha difere do cadastro do cliente (a NF usa o cadastro) | AB, AE, AF |
+| 029 | Município de prestação preenchido, mas "Prestação fora de SP" = N | T, V |
+
 ---
 
-## 10. Criação da NF – `BAPI_J_1B_NF_CREATEFROMDATA`
+## 10. Verificação de duplicidade (antes da criação) ✅
 
-Uma NF por linha válida, 1 item. Após a chamada: sem mensagem E/A em `RETURN` e `DOC_NUMBER` preenchido → `BAPI_TRANSACTION_COMMIT` (WAIT = X); caso contrário → `BAPI_TRANSACTION_ROLLBACK` e mensagens E/A gravadas no LOG.
+Executada após as validações de linha, **somente para as linhas sem erro**, e antes do bloqueio/BAPI.
 
-### 10.1 `OBJ_HEADER`
+| Critério | Regra | Mensagem |
+|---|---|---|
+| A – RPS | Mesmo **BUKRS + BRANCH + RPS** já com status S em `ZSD_BR_NFSE_DATA` (qualquer arquivo) **ou** repetido em outra linha válida do mesmo arquivo | 017 |
+| B – Conteúdo | Mesmo **BUKRS + BRANCH + cliente + data de prestação + valor dos serviços + código de serviço** já com status S, mesmo com RPS diferente, **ou** repetido no mesmo arquivo | 026 |
+
+- **Exceção – NF cancelada**: se a NF anterior estiver cancelada (`J_1BNFDOC-CANCEL = X`), não é duplicidade (permite reemissão).
+- No mesmo arquivo, a 1ª ocorrência segue; as seguintes são duplicadas.
+- Alcance: só NFs criadas por esta solução (tabelas Z). NFs digitadas manualmente na J1B1N não são verificadas.
+
+**Popup (um único, com todas as duplicidades)**
+
+Colunas: Linha · Cliente · RPS · Valor · Critério (A/B) · Arquivo/linha anterior · NF anterior (hotspot J1B3N) · Data de emissão anterior.
+
+| Modo | Botões | Efeito |
+|---|---|---|
+| Normal | **Continue without duplicates** | Duplicadas → status E + 017/026; demais seguem para a criação |
+| Normal | **Cancel processing** | Nenhuma NF criada; todas as linhas → E + 027; arquivo → E, `CANCEL_FLAG = X` |
+| Validate only | **OK** (informativo) | Duplicadas → E + 017/026 |
+
+Não existe opção "criar mesmo assim" ✅.
+
+---
+
+## 11. Criação da NF – `BAPI_J_1B_NF_CREATEFROMDATA`
+
+Uma NF por linha válida, 1 item, sob o bloqueio `EZSD_BR_NFSE`. Após a chamada: sem mensagem E/A em `RETURN` e `DOC_NUMBER` preenchido → UPDATE `ZSD_BR_NFSE_DATA` (S, DOCNUM) + INSERT LOG 022 → `BAPI_TRANSACTION_COMMIT` (WAIT = X), tudo na mesma LUW; caso contrário → `BAPI_TRANSACTION_ROLLBACK`, depois DATA E + mensagens E/A no LOG e `COMMIT WORK`.
+
+### 11.1 `OBJ_HEADER`
 
 | Campo | Origem |
 |---|---|
 | BUKRS / BRANCH / NFTYPE | Tela |
 | DOCTYP / MODEL / SERIES | `J_1BAA` pelo NF type |
 | DIRECT | '2' (saída) |
-| DOCDAT / PSTDAT | SY-DATUM ✅ |
+| DOCDAT / PSTDAT | `P_DOCDAT` (padrão SY-DATUM) ✅ |
 | MANUAL | 'X' |
 | WAERK | 'BRL' |
 | PARVW / PARID / PARTYP | 'AG' / KUNNR / 'C' ✅ |
 | NFNUM / NFENUM | ⏳ RPS? (hoje: não preenchido, numeração conforme NF type) |
 
-### 10.2 `OBJ_PARTNER`
+### 11.2 `OBJ_PARTNER`
 
 | PARVW | PARID | PARTYP |
 |---|---|---|
@@ -425,7 +503,7 @@ Uma NF por linha válida, 1 item. Após a chamada: sem mensagem E/A em `RETURN` 
 
 Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usados só para validação e log.
 
-### 10.3 `OBJ_ITEM` (ITMNUM 000010)
+### 11.3 `OBJ_ITEM` (ITMNUM 000010)
 
 | Campo | Origem |
 |---|---|
@@ -442,7 +520,7 @@ Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usad
 | XPED | PO_NUMBER |
 | Campos da reforma (cClassTrib, cIndOp, NBS…) | Colunas AY–BB (cClassTrib: padrão por parâmetro se vazio). **Preenchidos dinamicamente**: só se o campo existir na estrutura da BAPI (notas em implantação) 💡✅ |
 
-### 10.4 `OBJ_ITEM_TAX` – uma linha por imposto com valor > 0 ✅
+### 11.4 `OBJ_ITEM_TAX` – uma linha por imposto com valor > 0 ✅
 
 | Grupo | Coluna | TAXTYP | BASE | RATE | TAXVAL |
 |---|---|---|---|---|---|
@@ -457,47 +535,57 @@ Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usad
 
 > ⚠️ Pré-requisito fiscal: tipos de retenção configurados como **retenção** na J_1BAJ (não somam ao total da NF) e NF type Z1 sem lançamento contábil (J_1BAA).
 
-### 10.5 `OBJ_HEADER_MSG` – texto da NF
+### 11.5 `OBJ_HEADER_MSG` – texto da NF
 
 - Discriminação dos serviços: `||` e `|` = quebra de linha; cada linha quebrada em blocos de 72 caracteres (sem cortar palavras).
 - Última linha: `RPS: <número>` (enquanto `RPS_TARGET = TEXT`) ⏳.
 
-### 10.6 Retorno
+### 11.6 Retorno
 
 | Resultado | ZSD_BR_NFSE_DATA | ZSD_BR_NFSE_LOG |
 |---|---|---|
-| Sucesso | STATUS = S, DOCNUM = DOC_NUMBER | Msg 022 (tipo S) com DOCNUM |
+| Sucesso | STATUS = S, DOCNUM = DOC_NUMBER (gravado antes do COMMIT) | Msg 022 (tipo S) com DOCNUM |
 | Erro | STATUS = E | Cada mensagem E/A do RETURN: classe (ID), número, texto |
 
 ---
 
-## 11. Status do arquivo
+## 12. Status do arquivo
 
 | Situação | FILE-STATUS |
 |---|---|
-| Erro de arquivo (018/001) ou todas as linhas E | E |
-| Todas as linhas S | S |
+| Erro de arquivo (018/001/033), cancelado no popup ou todas as linhas E | E |
+| Todas as linhas S (ou V em Validate only) | S |
 | Demais casos | P |
 
 Também atualiza `LINE_COUNT`, `SUCCESS_COUNT`, `ERROR_COUNT`.
 
 ---
 
-## 12. Manutenção de parâmetros (admin – opção 3)
+## 13. Funções do admin
+
+### 13.1 Manutenção de parâmetros (opção 3)
 
 `VIEW_MAINTENANCE_CALL` (ação U, view `ZSD_BR_NFSE_PARM`), usando o TMG gerado. Vantagens: transporte padrão, log de alteração, autorização via `S_TABU_DIS`, sem dynpro manual.
 
+### 13.2 Expurgo de logs – LGPD (opção 4) ✅
+
+As tabelas guardam dados pessoais (CPF/CNPJ, nomes, e-mails, endereços). O expurgo apaga `ZSD_BR_NFSE_FILE` + `ZSD_BR_NFSE_DATA` + `ZSD_BR_NFSE_LOG` dos arquivos com `EXEC_DATE < P_PDATE`. Com `P_PTEST` mostra apenas a contagem; sem ele pede confirmação (popup) e grava o resultado (msg 034). As NFs no SAP não são afetadas.
+
+### 13.3 Reprocessar erros (botão no ALV de log, só admin) ✅
+
+Para um arquivo selecionado, reprocessa as linhas com status E (ou ' ' após bloqueio 030) **a partir dos dados já gravados** – sem novo upload. Útil quando o erro era de configuração (ex.: material não cadastrado em parâmetros). Executa novamente validações, duplicidade e criação (passos 5–9); as mensagens antigas da linha são mantidas e as novas são acrescentadas com novo `LOG_ITEM`; o status do arquivo é recalculado.
+
 ---
 
-## 13. ALVs
+## 14. ALVs
 
-### 13.1 Resultado do processamento (opção 1)
+### 14.1 Resultado do processamento (opção 1)
 
 Cabeçalho (top-of-list): File ID, arquivo, empresa/local de negócio, status do arquivo, linhas / sucesso / erro.
 
 | Coluna | Visível | Obs. |
 |---|---|---|
-| Status (ícone) | ✔ | S = 🟢 `ICON_LED_GREEN` · E = 🔴 `ICON_LED_RED` · vazio = ⚪ |
+| Status (ícone) | ✔ | S = 🟢 · S com avisos (W) = 🟡 · E = 🔴 · NF cancelada = ⚪ cinza · V (validate only) = 🔵 · não processada = vazio |
 | LINE_ID | ✔ | Linha do Excel |
 | KUNNR | ✔ | |
 | CUSTOMER_SHORT_NAME | ✔ | |
@@ -507,18 +595,19 @@ Cabeçalho (top-of-list): File ID, arquivo, empresa/local de negócio, status do
 | ISS_AMT | ✔ | Com total |
 | SERVICE_CODE | ✔ | |
 | DOCNUM | ✔ | **Hotspot** → `SET PARAMETER ID 'JEF'` + `CALL TRANSACTION 'J1B3N' AND SKIP FIRST SCREEN` (⏳ confirmar PID) |
-| MESSAGE | ✔ | 1ª mensagem de erro ou mensagem de sucesso; nº de mensagens entre parênteses |
+| CANCELLED | ✔ | Lido em tempo real de `J_1BNFDOC-CANCEL` (X = NF cancelada) ✅ |
+| MESSAGE | ✔ | 1ª mensagem de erro (ou aviso, ou sucesso); nº de mensagens entre parênteses |
 | Demais campos da DATA | – | Disponíveis via layout |
 
-Duplo clique na linha → popup com todas as mensagens da linha (`ZSD_BR_NFSE_LOG`). Layouts de usuário salváveis.
+Duplo clique na linha → popup com todas as mensagens da linha (`ZSD_BR_NFSE_LOG`). Layouts de usuário salváveis. Durante o processamento: indicador de progresso (`SAPGUI_PROGRESS_INDICATOR`, "Creating NF 12 of 85").
 
-### 13.2 Log de execução (opção 2)
+### 14.2 Log de execução (opção 2)
 
-Mesma estrutura do 13.1, com colunas adicionais visíveis: **FILE_ID, FILE_NAME, EXEC_DATE, EXEC_USER** e **File status** (ícone: S 🟢 / P 🟡 / E 🔴). Erros de arquivo (linha 000000) aparecem como linha própria. Duplo clique → popup de mensagens; hotspot DOCNUM igual ao 13.1.
+Mesma estrutura do 14.1, com colunas adicionais visíveis: **FILE_ID, FILE_NAME, EXEC_DATE, EXEC_USER** e **File status** (ícone: S 🟢 / P 🟡 / E 🔴). Erros de arquivo (linha 000000) aparecem como linha própria. Duplo clique → popup de mensagens; hotspot DOCNUM igual ao 14.1. **Admin**: botão "Reprocess errors" na barra (seção 13.3).
 
 ---
 
-## 14. Classe de mensagem `ZSD_BR_NFSE_MSG`
+## 15. Classe de mensagem `ZSD_BR_NFSE_MSG`
 
 | Nº | Texto (EN) | Status |
 |---|---|---|
@@ -538,7 +627,7 @@ Mesma estrutura do 13.1, com colunas adicionais visíveis: **FILE_ID, FILE_NAME,
 | 014 | Tax group &1 not filled | ✅ |
 | 015 | Service municipality not filled | ✅ |
 | 016 | UF &1 does not match municipality code &2 | ✅ |
-| 017 | RPS &1 already used (file &2, line &3) | ✅ |
+| 017 | Duplicate RPS &1 (file &2, line &3, NF &4) | ✅ |
 | 018 | File &1 could not be read or worksheet &2 not found | ✅ |
 | 019 | Customer &1 not extended to company code &2 | ✅ |
 | 020 | Customer &1 is blocked | ✅ |
@@ -547,10 +636,19 @@ Mesma estrutura do 13.1, com colunas adicionais visíveis: **FILE_ID, FILE_NAME,
 | 023 | Tax type not configured for &1 | ✅ |
 | 024 | Service date missing or invalid | ✅ |
 | 025 | Parameter &1 not configured for value &2 | ✅ |
+| 026 | Probable duplicate of file &1 line &2 (NF &3): same customer, date, amount and service | ✅ |
+| 027 | Processing cancelled by user (duplicates found) | ✅ |
+| 028 | Warning: customer &1 address in file differs from master data | ✅ (W) |
+| 029 | Warning: service municipality filled but service is not outside São Paulo | ✅ (W) |
+| 030 | Processing locked by user &1 for company code &2 / business place &3 | ✅ |
+| 031 | Business place &1 is not assigned to company code &2 | ✅ |
+| 032 | NF type &1 is not an outgoing NF type without accounting posting | ✅ |
+| 033 | File has &1 lines; maximum allowed is &2 | ✅ |
+| 034 | &1 files deleted (&2 lines, &3 messages) | ✅ |
 
 ---
 
-## 15. Pendências e premissas
+## 16. Pendências e premissas
 
 | # | Item | Status | Tratamento provisório |
 |---|---|---|---|
@@ -563,13 +661,19 @@ Mesma estrutura do 13.1, com colunas adicionais visíveis: **FILE_ID, FILE_NAME,
 | P7 | Parameter ID do DOCNUM na J1B3N (`JEF`) | ⏳ verificar no sistema | – |
 | P8 | Nomes do header (Developer / IT / Business) | ⏳ | `<TBD>` |
 | P9 | Sugestões (P_TEST, msgs 017–022, 024, 025) | ✅ aprovadas | – |
-| P10 | Chave da verificação de RPS duplicado (017): o RPS é sequência do prestador, então a planilha-modelo tem o RPS 37379 em duas linhas (WINITY e COMPESA) | ✅ | BUKRS + BRANCH |
+| P10 | Chave do RPS duplicado | ✅ BUKRS + BRANCH | – |
+| P11 | Guardar o arquivo original (`FILE_CONTENT`) | 💡 opcional | Não implementado salvo decisão |
+| P12 | Regra 1 linha = 1 NF | ⏳ confirmar com fiscal | 1:1 |
+| P13 | `P_DOCDAT` editável pelo admin e impacto nos livros fiscais / EFD-Reinf / DIRF dos tipos de retenção | ⏳ confirmar com fiscal | Admin pode alterar |
+| P14 | Prazo de retenção do log (LGPD) | ⏳ validar com DPO | 5 anos |
 
 ---
 
-## 16. Próximos passos
+## 17. Entregáveis e próximos passos
 
-1. Revisão deste documento.
-2. **Mockup** das telas – publicado: https://claude.ai/artifact/UewVEduzZQ7zAnPXbE3VZj
-3. Aprovação.
-4. Codificação + especificação final do DDIC.
+1. Revisão deste documento (v0.3) e do mockup – https://claude.ai/artifact/UewVEduzZQ7zAnPXbE3VZj
+2. Aprovação.
+3. Codificação + especificação final do DDIC (transporte de DDIC separado – guideline item 14a).
+4. Documentação do programa para o usuário (SE38, em português) além do header ✅.
+5. ATC / Code Inspector sem erros ✅.
+6. Planilha de teste com um caso por mensagem (001–034) para o teste integrado ✅.
