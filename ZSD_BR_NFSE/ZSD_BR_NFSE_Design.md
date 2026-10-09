@@ -441,6 +441,8 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 |---|---|---|---|---|
 | SRV_DESCRIPTION | Código do Serviço Prestado na Nota Fiscal | 1902 | Pericias, laudos, exames tecnicos e analises tecnicas, inclusive institutos psicotecnicos. | Prefixo da discriminação (col. 73), como a PMSP faz |
 | SRV_DESCRIPTION | Código do Serviço Prestado na Nota Fiscal | 1805 | Acompanhamento e fiscalizacao da execucao de obras de engenharia, arquitetura e urbanismo. | |
+| SRV_DESCRIPTION | Código do Serviço Prestado na Nota Fiscal | 1694 | Estudos, planos e projetos tecnicos de engenharia, arquitetura e urbanismo. | |
+| SRV_DESCRIPTION | Código do Serviço Prestado na Nota Fiscal | 3115 | Assessoria ou consultoria de qualquer natureza, nao contida em outros itens desta lista. | Textos extraídos do arquivo da PMSP de 09/2026 (4 códigos usados) |
 
 > Valores entre parênteses: a definir pelo consultor fiscal / configuração das notas da reforma.
 
