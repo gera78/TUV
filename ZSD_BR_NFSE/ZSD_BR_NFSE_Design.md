@@ -7,7 +7,7 @@
 | Projeto | TÜV – Criação de NF Writer a partir de planilha de NFS-e |
 | Empresa / Local de negócio | 5596 / 0001 (padrão) |
 | Ambiente | SAP S/4HANA (notas da Reforma Tributária em implantação) |
-| Versão | 0.3 – Verificação de duplicidade com popup, bloqueio, LUW única, LGPD/expurgo, reprocessamento, avisos (W), data de emissão |
+| Versão | 0.4 – Nova opção: geração do arquivo de saída (CSV no layout da exportação de NFS-e da PMSP) com controle de exportação |
 | Data | 09.10.2026 |
 | Developer / IT Responsible / Business Responsible | `<TBD>` |
 | Status | Em revisão do mockup → aprovação → codificação |
@@ -85,14 +85,15 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
 
 | Objeto | Tipo | Usado por | Conteúdo |
 |---|---|---|---|
-| `ZSD_BR_NFSE_UPLOAD` | Report | Usuário | Opções 1 e 2 |
-| `ZSD_BR_NFSE_UPLOAD_ADM` | Report | Admin | Opções 1, 2, 3 (parâmetros) e 4 (expurgo de logs) |
+| `ZSD_BR_NFSE_UPLOAD` | Report | Usuário | Opções 1, 2 e 3 (arquivo de saída) |
+| `ZSD_BR_NFSE_UPLOAD_ADM` | Report | Admin | Opções 1, 2, 3 (arquivo de saída), 4 (parâmetros) e 5 (expurgo de logs) |
 | `ZSD_BR_NFSE_TOP` | Include | Ambos | Tipos, dados globais, constantes, classes ALV de evento |
-| `ZSD_BR_NFSE_SCR_COM` | Include | Ambos | Blocos de parâmetros das opções 1 e 2 |
+| `ZSD_BR_NFSE_SCR_COM` | Include | Ambos | Blocos de parâmetros das opções 1, 2 e 3 |
 | `ZSD_BR_NFSE_SCR` | Include | Usuário | Radio buttons (1, 2) + eventos de tela |
 | `ZSD_BR_NFSE_SCR_ADM` | Include | Admin | Radio buttons (1, 2, 3) + eventos de tela |
 | `ZSD_BR_NFSE_F01` | Include | Ambos | Autorização, upload, gravação, validações, BAPI, status |
-| `ZSD_BR_NFSE_ALV` | Include | Ambos | ALV de processamento e de log, semáforo, hotspot, popup de mensagens |
+| `ZSD_BR_NFSE_ALV` | Include | Ambos | ALV de processamento, de log e de exportação; semáforo, hotspot, popups |
+| `ZSD_BR_NFSE_F03` | Include | Ambos | Geração do arquivo de saída (CSV PMSP) e gravação do controle de exportação |
 | `ZSD_BR_NFSE_F02_ADM` | Include | Admin | Manutenção de parâmetros, expurgo de logs, reprocessamento de erros |
 
 > O radio group precisa ser declarado de uma só vez, por isso há um include SCR por programa; os blocos de parâmetros ficam no `SCR_COM`.
@@ -122,6 +123,7 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
 |---|---|
 | `P_RUPL` | Process upload and create NF Writer (padrão) |
 | `P_RLOG` | Display execution log |
+| `P_REXP` | Generate output file (CSV) |
 
 **Bloco "Upload parameters"** – visível só com `P_RUPL`
 
@@ -153,9 +155,26 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
 | `S_MSGNO` | `ZSD_BR_NFSE_LOG-MSGNO` | Filtra linhas que tenham a mensagem |
 | `P_ERRONLY` | Checkbox | "Lines with errors only" |
 
+**Bloco "Output file selection"** – visível só com `P_REXP` ✅
+
+| Campo | Referência | Obs. |
+|---|---|---|
+| `S_BUKRS` | `ZSD_BR_NFSE_FILE-BUKRS` | Padrão 5596 (obrigatório) |
+| `S_BRANCH` | `ZSD_BR_NFSE_FILE-BRANCH` | Padrão 0001 |
+| `S_RPS` | `ZSD_BR_NFSE_DATA-RPS_NUMBER` | Faixa ou lista de RPS |
+| `S_SRVDAT` | `ZSD_BR_NFSE_DATA-SERVICE_DATE` | Data de prestação (fato gerador) |
+| `S_EXDATE` | `ZSD_BR_NFSE_FILE-EXEC_DATE` | Data do upload |
+| `S_FILEID` | `ZSD_BR_NFSE_FILE-FILE_ID` | Arquivo carregado |
+| `S_KUNNR` | `ZSD_BR_NFSE_DATA-KUNNR` | |
+| `S_SRVCD` | `ZSD_BR_NFSE_DATA-SERVICE_CODE` | Código de serviço |
+| `S_SITU` | T / F | Tipo de tributação: T = dentro de SP · F = fora de SP (derivado de "Prestação fora de SP") |
+| `P_NEWONLY` | Checkbox, padrão X | "Not yet exported only" – desmarcado traz também as já exportadas |
+
+Somente linhas com **status S** (NF criada) e **NF não cancelada** no SAP são selecionáveis. O resultado abre no ALV de exportação (seção 14.3), onde o usuário marca as linhas e gera o arquivo.
+
 ### 4.2 Programa do admin (`ZNFSE_ADM`)
 
-Mesmos blocos do usuário (com `P_DOCDAT` editável) + dois radios exclusivos do admin:
+Mesmos blocos do usuário – opções 1, 2 e 3 (com `P_DOCDAT` editável) – + dois radios exclusivos do admin (opções 4 e 5):
 
 | Radio | Texto | Tela |
 |---|---|---|
@@ -180,8 +199,9 @@ Mesmos blocos do usuário (com `P_DOCDAT` editável) + dois radios exclusivos do
 | Opção 1 – antes do upload | `S_TCODE` – `TCD = J1B1N` | Mensagem 021 |
 | Opção 2 – ao exibir | `F_BKPF_BUK` – `ACTVT = 03` por BUKRS selecionado | Linhas de empresas sem autorização são removidas (mensagem informativa) |
 | Hotspot DOCNUM | `CALL TRANSACTION 'J1B3N' WITH AUTHORITY-CHECK` | Padrão SAP |
-| Opção 3 | Transação `ZNFSE_ADM` + `S_TABU_DIS` (grupo de autorização da tabela) | Padrão SAP |
-| Opção 4 / "Reprocess errors" | Transação `ZNFSE_ADM` + `F_BKPF_BUK` (ACTVT 06 expurgo / 01 reprocessamento) | Mensagem 021 |
+| Opção 3 – arquivo de saída | `F_BKPF_BUK` – `ACTVT = 03` por BUKRS selecionado | Linhas sem autorização removidas |
+| Opção 4 (admin) | Transação `ZNFSE_ADM` + `S_TABU_DIS` (grupo de autorização da tabela) | Padrão SAP |
+| Opção 5 (admin) / "Reprocess errors" | Transação `ZNFSE_ADM` + `F_BKPF_BUK` (ACTVT 06 expurgo / 01 reprocessamento) | Mensagem 021 |
 
 ⏳ Confirmar na **SU24 da J1B1N** se existe objeto específico de NF (com BUKRS/ACTVT) que deva substituir ou complementar `F_BKPF_BUK`. ACTVT 01 = Create (TACT) ✅.
 
@@ -234,6 +254,16 @@ Mesmos blocos do usuário (com `P_DOCDAT` editável) + dois radios exclusivos do
 | STATUS | | `ZSD_BR_NFSE_LINE_STATUS` | CHAR 1 | Line status |
 | DOCNUM | | `J_1BDOCNUM` | NUMC 10 | NF document number |
 | WAERS | | `WAERS` | CUKY 5 | Currency (BRL) – referência dos campos CURR |
+
+**Controle de exportação (arquivo de saída)** ✅ – guarda a **última** exportação; o histórico completo fica no LOG (msg 035)
+
+| Campo | Elemento de dados | Tipo | Descrição |
+|---|---|---|---|
+| EXPORT_FILE | `ZSD_BR_NFSE_EXPORT_FILE` | CHAR 255 | Nome do último arquivo de saída gerado |
+| EXPORT_DATE | `ZSD_BR_NFSE_EXPORT_DATE` | DATS | Data da última exportação |
+| EXPORT_TIME | `ZSD_BR_NFSE_EXPORT_TIME` | TIMS | Hora da última exportação |
+| EXPORT_USER | `ZSD_BR_NFSE_EXPORT_USER` | CHAR 12 (`UNAME`) | Usuário da última exportação |
+| EXPORT_COUNT | `ZSD_BR_NFSE_EXPORT_COUNT` | INT2 | Quantas vezes a linha já foi exportada |
 
 **Dados da planilha (aba "Emissão NF - Ductor")** – coluna A ("ULTIMA RPS UTILIZADA") não é gravada.
 
@@ -397,6 +427,20 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | RPS_TARGET | TEXT | Não | Destino do RPS ⏳ (TEXT = última linha do texto) |
 | MAX_LINES | 500 | Não | Limite de linhas por arquivo (msg 033) |
 | LOG_RETENTION_YEARS | 5 | Não | Prazo de retenção do log (LGPD) – padrão do expurgo ⏳ validar com DPO (P14) |
+| RPS_SERIES | 900 | Sim (saída) | Série do RPS – coluna 6 do arquivo de saída |
+| PRV_MUN_REG | 8.169.973-5 | Sim (saída) | Inscrição municipal do prestador (col. 9; também compõe o nome do arquivo) |
+| PRV_TAX_ID | 47.096.581/0001-70 | Sim (saída) | CNPJ do prestador (col. 11) |
+| PRV_NAME | TUV RHEINLAND DUCTOR LTDA | Sim (saída) | Razão social (col. 12) |
+| PRV_STREET_TYPE / PRV_STREET / PRV_HOUSE_NUM / PRV_ADDR_COMPL / PRV_DISTRICT / PRV_CITY / PRV_REGION / PRV_POSTAL_CODE | AV / FRANCISCO MATARAZZO / 1400 / ANDAR 6 / AGUA BRANCA / (vazio) / (vazio) / 05001-903 | Sim (saída) | Endereço do prestador (col. 13–20), exatamente como no arquivo da PMSP |
+| PRV_EMAIL | fiscal@br.tuv.com | Sim (saída) | E-mail do prestador (col. 21) |
+| CSV_REMOVE_ACCENTS | X | Não | Remove acentos dos textos (a PMSP exporta sem acentos) |
+
+**Mapeamento por código de serviço (arquivo de saída)**
+
+| FIELD_NAME | FILE_COLUMN_NAME | INPUT | OUTPUT (exemplo) | Uso |
+|---|---|---|---|---|
+| SRV_DESCRIPTION | Código do Serviço Prestado na Nota Fiscal | 1902 | Pericias, laudos, exames tecnicos e analises tecnicas, inclusive institutos psicotecnicos. | Prefixo da discriminação (col. 73), como a PMSP faz |
+| SRV_DESCRIPTION | Código do Serviço Prestado na Nota Fiscal | 1805 | Acompanhamento e fiscalizacao da execucao de obras de engenharia, arquitetura e urbanismo. | |
 
 > Valores entre parênteses: a definir pelo consultor fiscal / configuração das notas da reforma.
 
@@ -549,6 +593,97 @@ Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usad
 
 ---
 
+## 11A. Arquivo de saída – CSV no layout da exportação de NFS-e da PMSP ✅
+
+**Objetivo**: gerar, para as linhas selecionadas, um CSV no mesmo layout do arquivo exportado pelo portal Nota Fiscal Paulistana (`NFSe_E_<IM>_<data ini>_<data fim>.csv`, modelo recebido: 295 notas de 09/2026).
+
+### 11A.1 Fluxo
+
+1. Tela de seleção (opção 3) → ALV de exportação com checkbox (seção 14.3).
+2. Usuário marca as linhas ("Select all" / "Deselect all" disponíveis) e clica **"Export CSV"**.
+3. Se alguma linha marcada já foi exportada → popup: "&1 of &2 selected lines were already exported. Export again?" (Yes / No / Cancel). *No* exporta só as ainda não exportadas.
+4. Diálogo "Salvar como" (`CL_GUI_FRONTEND_SERVICES=>FILE_SAVE_DIALOG`), nome sugerido `NFSe_E_<IM só dígitos>_<menor data de prestação>_<maior data de prestação>.csv` (editável).
+5. Gravação (`GUI_DOWNLOAD`, codepage ISO-8859-1 / 1100, CRLF).
+6. Para cada linha exportada: atualiza `EXPORT_FILE / EXPORT_DATE / EXPORT_TIME / EXPORT_USER`, soma 1 em `EXPORT_COUNT` e grava LOG msg 035 (tipo S) – tudo em um COMMIT após o download bem-sucedido. Falha no download → nada é gravado (msg 036).
+7. O ALV é atualizado (ícone "exportado" + nome do arquivo).
+
+### 11A.2 Formato
+
+| Item | Regra (igual ao arquivo da PMSP) |
+|---|---|
+| Separador | `;` |
+| Codificação / fim de linha | ISO-8859-1 · CRLF |
+| Linha 1 | Cabeçalho com os 73 nomes de coluna exatamente como no modelo |
+| Linhas de detalhe | Tipo de registro `2`, uma por NF |
+| Última linha | `Total;<qtd linhas>;…` com soma de "Valor dos Serviços" (col. 27), "Valor das Deduções" (col. 28) e "ISS devido" (col. 31) – 49 colunas |
+| Números | Vírgula decimal, ponto de milhar, 2 casas (ex. `163.172,94`) |
+| Datas | `dd/mm/aaaa` |
+| Textos | Sem `;` e sem quebras de linha; sem acentos se `CSV_REMOVE_ACCENTS = X` |
+
+### 11A.3 Mapeamento das 73 colunas
+
+Origem: **D** = `ZSD_BR_NFSE_DATA` (planilha) · **P** = parâmetro · **R** = regra fixa/derivada · **M** = cadastro do cliente (BP) · **–** = só a Prefeitura gera (vazio)
+
+| Col. | Coluna | Origem | Regra |
+|---|---|---|---|
+| 1 | Tipo de Registro | R | `2` |
+| 2 | Nº NFS-e | – | Vazio (gerado pela PMSP) – ⏳ P18 |
+| 3 | Data Hora NFE | – | Vazio |
+| 4 | Código de Verificação da NFS-e | – | Vazio |
+| 5 | Tipo de RPS | R | `RPS` |
+| 6 | Série do RPS | P | `RPS_SERIES` (900) |
+| 7 | Número do RPS | D | RPS_NUMBER |
+| 8 | Data do Fato Gerador | D | SERVICE_DATE |
+| 9 | Inscrição Municipal do Prestador | P | `PRV_MUN_REG` |
+| 10 | Indicador de CPF/CNPJ do Prestador | R | `2` |
+| 11 | CPF/CNPJ do Prestador | P | `PRV_TAX_ID` |
+| 12 | Razão Social do Prestador | P | `PRV_NAME` |
+| 13–20 | Endereço do Prestador (tipo, logradouro, número, complemento, bairro, cidade, UF, CEP) | P | `PRV_*` |
+| 21 | Email do Prestador | P | `PRV_EMAIL` |
+| 22 | Opção Pelo Simples | R | `0` |
+| 23 | Situação da Nota Fiscal | R | `T` se OUTSIDE_SP_FLAG = N · `F` se = S (confirmado no modelo: T ⇔ município 0) |
+| 24 | Data de Cancelamento | – | Vazio (NF cancelada não é exportável) |
+| 25–26 | Nº da Guia / Data de Quitação | – | Vazio |
+| 27 | Valor dos Serviços | D | SERVICE_AMOUNT |
+| 28 | Valor das Deduções | R | `0,00` |
+| 29 | Código do Serviço | D | SERVICE_CODE |
+| 30 | Alíquota | D | ISS_RATE × 100 (ex. `5,00`) |
+| 31 | ISS devido | D | ISS_AMT |
+| 32 | Valor do Crédito | R | `0,00` |
+| 33 | ISS Retido | D | ISS_WHT_FLAG |
+| 34 | Indicador de CPF/CNPJ do Tomador | R | `1` = CPF (11 díg.) · `2` = CNPJ (14 díg.) · `3` = não informado |
+| 35 | CPF/CNPJ do Tomador | D | TAKER_TAX_ID |
+| 36 | Inscrição Municipal do Tomador | D | TAKER_MUN_REG (vazio se 0) |
+| 37 | Inscrição Estadual do Tomador | M | `KNA1-STCD3` |
+| 38 | Razão Social do Tomador | D | TAKER_NAME |
+| 39 | Tipo do Endereço do Tomador | D | TAKER_STREET_TYPE |
+| 40 | Endereço do Tomador | D | TAKER_STREET |
+| 41 | Número do Endereço do Tomador | D | TAKER_HOUSE_NUM |
+| 42 | Complemento do Endereço do Tomador | M | Endereço do cliente (BP) |
+| 43–46 | Bairro / Cidade / UF / CEP do Tomador | D | TAKER_DISTRICT / TAKER_CITY / TAKER_REGION / TAKER_POSTAL_CODE |
+| 47 | Email do Tomador | M | E-mail do cliente (BP); vazio se não houver |
+| 48 | Nº NFS-e Substituta | – | Vazio |
+| 49 | ISS pago | – | Vazio |
+| 50 | ISS a pagar | R | = ISS devido (confirmado nas 283 notas válidas do modelo) |
+| 51 | Indicador de CPF/CNPJ do Intermediário | R | `3` |
+| 52–55 | Intermediário / Repasse plano de saúde | – | Vazio |
+| 56 | PIS/PASEP | ⏳ | **P15** – planilha nova não tem PIS; provisório `0,00` |
+| 57 | COFINS | ⏳ | **P15** – idem |
+| 58 | INSS | D | INSS_AMT |
+| 59 | IR | D | IRRF_WHT_AMT |
+| 60 | CSLL | D | CSLL_WHT_AMT ⚠️ ver P15 |
+| 61–63 | Carga tributária (valor / % / fonte) | – | Vazio (calculado pela PMSP/IBPT) |
+| 64 | CEI | R | `0` |
+| 65 | Matrícula da Obra | R | `0` |
+| 66 | Município Prestação – cód. IBGE | D | SERVICE_CITY_CODE se OUTSIDE_SP_FLAG = S; senão `0` |
+| 67 | Situação do Aceite | – | Vazio |
+| 68 | Encapsulamento | R | `0` |
+| 69 | Valor Total Recebido | R | `0,00` |
+| 70–72 | Consolidação / Campo reservado | – | Vazio |
+| 73 | Discriminação dos Serviços | D + P | `SRV_DESCRIPTION` do código + `||` + SERVICE_DESCRIPTION (separadores `|` mantidos) |
+
+---
+
 ## 12. Status do arquivo
 
 | Situação | FILE-STATUS |
@@ -563,11 +698,11 @@ Também atualiza `LINE_COUNT`, `SUCCESS_COUNT`, `ERROR_COUNT`.
 
 ## 13. Funções do admin
 
-### 13.1 Manutenção de parâmetros (opção 3)
+### 13.1 Manutenção de parâmetros (opção 4)
 
 `VIEW_MAINTENANCE_CALL` (ação U, view `ZSD_BR_NFSE_PARM`), usando o TMG gerado. Vantagens: transporte padrão, log de alteração, autorização via `S_TABU_DIS`, sem dynpro manual.
 
-### 13.2 Expurgo de logs – LGPD (opção 4) ✅
+### 13.2 Expurgo de logs – LGPD (opção 5) ✅
 
 As tabelas guardam dados pessoais (CPF/CNPJ, nomes, e-mails, endereços). O expurgo apaga `ZSD_BR_NFSE_FILE` + `ZSD_BR_NFSE_DATA` + `ZSD_BR_NFSE_LOG` dos arquivos com `EXEC_DATE < P_PDATE`. Com `P_PTEST` mostra apenas a contagem; sem ele pede confirmação (popup) e grava o resultado (msg 034). As NFs no SAP não são afetadas.
 
@@ -604,6 +739,27 @@ Duplo clique na linha → popup com todas as mensagens da linha (`ZSD_BR_NFSE_LO
 ### 14.2 Log de execução (opção 2)
 
 Mesma estrutura do 14.1, com colunas adicionais visíveis: **FILE_ID, FILE_NAME, EXEC_DATE, EXEC_USER** e **File status** (ícone: S 🟢 / P 🟡 / E 🔴). Erros de arquivo (linha 000000) aparecem como linha própria. Duplo clique → popup de mensagens; hotspot DOCNUM igual ao 14.1. **Admin**: botão "Reprocess errors" na barra (seção 13.3).
+
+---
+
+### 14.3 Exportação – arquivo de saída (opção 3) ✅
+
+Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change Layout.
+
+| Coluna | Visível | Obs. |
+|---|---|---|
+| Seleção (checkbox editável) | ✔ | Marcada por padrão nas linhas ainda não exportadas |
+| Exportado (ícone) | ✔ | Vazio = nunca exportada · ícone de documento = já exportada (tooltip com arquivo e data) |
+| RPS_NUMBER | ✔ | |
+| SERVICE_DATE | ✔ | Data do fato gerador |
+| KUNNR / TAKER_NAME | ✔ | |
+| SERVICE_AMOUNT | ✔ | Com total das linhas marcadas |
+| ISS_AMT | ✔ | Com total |
+| Situação (T/F) | ✔ | |
+| SERVICE_CODE | ✔ | |
+| DOCNUM | ✔ | Hotspot J1B3N |
+| EXPORT_FILE / EXPORT_DATE / EXPORT_USER / EXPORT_COUNT | ✔ | Última exportação |
+| FILE_ID / LINE_ID | – | Via layout |
 
 ---
 
@@ -645,6 +801,10 @@ Mesma estrutura do 14.1, com colunas adicionais visíveis: **FILE_ID, FILE_NAME,
 | 032 | NF type &1 is not an outgoing NF type without accounting posting | ✅ |
 | 033 | File has &1 lines; maximum allowed is &2 | ✅ |
 | 034 | &1 files deleted (&2 lines, &3 messages) | ✅ |
+| 035 | Line exported to output file &1 | ✅ |
+| 036 | Output file &1 could not be written; nothing was recorded | ✅ |
+| 037 | No lines selected for export | ✅ |
+| 038 | &1 lines exported to &2 | ✅ |
 
 ---
 
@@ -666,14 +826,19 @@ Mesma estrutura do 14.1, com colunas adicionais visíveis: **FILE_ID, FILE_NAME,
 | P12 | Regra 1 linha = 1 NF | ⏳ confirmar com fiscal | 1:1 |
 | P13 | `P_DOCDAT` editável pelo admin e impacto nos livros fiscais / EFD-Reinf / DIRF dos tipos de retenção | ⏳ confirmar com fiscal | Admin pode alterar |
 | P14 | Prazo de retenção do log (LGPD) | ⏳ validar com DPO | 5 anos |
+| P15 | Arquivo de saída – PIS/COFINS (cols. 56–57) e CSLL (60): planilha nova não tem PIS/COFINS, e no modelo a nota WINITY de R$ 2.000,00 (NFS-e 38088) tem PIS 33,00 / COFINS 152,00 / CSLL 93,00, diferente das alíquotas do texto (13,00 / 60,00 / 20,00) | ⏳ fiscal | PIS/COFINS `0,00`; CSLL da planilha |
+| P16 | Arquivo de saída – quem consome o CSV e se aceita as colunas que só a PMSP preenche (Nº NFS-e, código de verificação) vazias | ⏳ | Vazias |
+| P17 | Uso de TXT em 2026: 39 notas de 09/2026 no modelo têm e-mail `nao-informado@importacao.txt` (indício de importação TXT), apesar de a PMSP ter anunciado o fim do TXT para fatos geradores de 2026 | ⏳ confirmar com a área | – |
+| P18 | 💡 Caminho inverso: importar o CSV exportado pela PMSP para gravar Nº NFS-e / código de verificação no SAP e conciliar valores e cancelamentos (resolveria P1) | ⏳ decisão | Fora do escopo |
 
 ---
 
 ## 17. Entregáveis e próximos passos
 
-1. Revisão deste documento (v0.3) e do mockup – https://claude.ai/artifact/UewVEduzZQ7zAnPXbE3VZj
+1. Revisão deste documento (v0.4) e do mockup – https://claude.ai/artifact/UewVEduzZQ7zAnPXbE3VZj
 2. Aprovação.
 3. Codificação + especificação final do DDIC (transporte de DDIC separado – guideline item 14a).
 4. Documentação do programa para o usuário (SE38, em português) além do header ✅.
 5. ATC / Code Inspector sem erros ✅.
-6. Planilha de teste com um caso por mensagem (001–034) para o teste integrado ✅.
+6. Planilha de teste com um caso por mensagem (001–038) para o teste integrado ✅.
+7. Teste do arquivo de saída: comparar coluna a coluna com o CSV exportado pela PMSP para as mesmas notas ✅.
