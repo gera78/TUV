@@ -394,7 +394,7 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | 014 | Grupo marcado como obrigatório (`TAXGRP_REQ_nn`) sem nenhum valor > 0 (grupo 01: J/K · 02: L · 03: M–Q) ✅ | J–Q |
 | 015 | Prestação fora de SP = S e município vazio | T, V |
 | 016 | Município preenchido e 2 primeiros dígitos IBGE ≠ UF (tabela de 27 UFs) ou código ≠ 7 dígitos | V, W |
-| 017 ✅ | RPS já usado: processado com sucesso em outro arquivo ou repetido no mesmo arquivo. ⏳ Chave da verificação: BUKRS + BRANCH (proposta v0.2, ver P10) ou BUKRS + cliente | B, F |
+| 017 ✅ | RPS já usado: processado com sucesso em outro arquivo ou repetido no mesmo arquivo. Chave: **BUKRS + BRANCH + RPS** ✅ | B, F |
 | 023 ✅ | Coluna de imposto com valor > 0 sem `TAXTYP_*` configurado | J–Q, S |
 | 025 ✅ | Parâmetro obrigatório não configurado (CFOP, TAXLW*, ITMTYP, MATUSE…) | – |
 
@@ -563,7 +563,7 @@ Mesma estrutura do 13.1, com colunas adicionais visíveis: **FILE_ID, FILE_NAME,
 | P7 | Parameter ID do DOCNUM na J1B3N (`JEF`) | ⏳ verificar no sistema | – |
 | P8 | Nomes do header (Developer / IT / Business) | ⏳ | `<TBD>` |
 | P9 | Sugestões (P_TEST, msgs 017–022, 024, 025) | ✅ aprovadas | – |
-| P10 | Chave da verificação de RPS duplicado (017): o RPS é sequência do prestador, então a planilha-modelo tem o RPS 37379 em duas linhas (WINITY e COMPESA) | ⏳ | Proposta: BUKRS + BRANCH |
+| P10 | Chave da verificação de RPS duplicado (017): o RPS é sequência do prestador, então a planilha-modelo tem o RPS 37379 em duas linhas (WINITY e COMPESA) | ✅ | BUKRS + BRANCH |
 
 ---
 
