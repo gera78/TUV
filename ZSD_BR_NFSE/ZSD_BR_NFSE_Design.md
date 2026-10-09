@@ -170,7 +170,7 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
 | `S_SITU` | T / F | Tipo de tributação: T = dentro de SP · F = fora de SP (derivado de "Prestação fora de SP") |
 | `P_NEWONLY` | Checkbox, padrão X | "Not yet exported only" – desmarcado traz também as já exportadas |
 
-Somente linhas com **status S** (NF criada), **NFS-e autorizada** (retorno da Prefeitura recebido via J1BNFE) e **NF não cancelada** no SAP são selecionáveis. Linhas ainda não autorizadas aparecem no ALV como "Awaiting authorization", sem checkbox. O resultado abre no ALV de exportação (seção 14.3), onde o usuário marca as linhas e gera o arquivo.
+Somente linhas com **status S** (NF criada), **Nº da NFS-e preenchido** (`J_1BNFDOC-NFENUM`, gravado automaticamente pelo processo J1BNFE no retorno da Prefeitura) e **NF não cancelada** no SAP são selecionáveis. Linhas com `NFENUM` vazio aparecem no ALV como "Awaiting NFS-e number", sem checkbox. O resultado abre no ALV de exportação (seção 14.3), onde o usuário marca as linhas e gera o arquivo.
 
 ### 4.2 Programa do admin (`ZNFSE_ADM`)
 
@@ -631,7 +631,7 @@ Origem: **D** = `ZSD_BR_NFSE_DATA` (planilha) · **P** = parâmetro · **R** = r
 | Col. | Coluna | Origem | Regra |
 |---|---|---|---|
 | 1 | Tipo de Registro | R | `2` |
-| 2 | Nº NFS-e | SAP | Nº oficial da NFS-e devolvido pela Prefeitura no passo 03 (J1BNFE) – ⏳ **P23** campo exato (provável `J_1BNFDOC-NFENUM`) |
+| 2 | Nº NFS-e | SAP | `J_1BNFDOC-NFENUM` ✅ (gravado automaticamente pelo processo J1BNFE) |
 | 3 | Data Hora NFE | SAP | Data/hora da autorização (`J_1BNFE_ACTIVE` – ⏳ P23) |
 | 4 | Código de Verificação da NFS-e | SAP | Código de verificação devolvido pela Prefeitura – ⏳ P23 campo exato |
 | 5 | Tipo de RPS | R | `RPS` |
@@ -835,7 +835,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | P15 | Arquivo de saída – PIS/COFINS (cols. 56–57) e CSLL (60): planilha nova não tem PIS/COFINS, e no modelo a nota WINITY de R$ 2.000,00 (NFS-e 38088) tem PIS 33,00 / COFINS 152,00 / CSLL 93,00, diferente das alíquotas do texto (13,00 / 60,00 / 20,00) | ⏳ fiscal | PIS/COFINS `0,00`; CSLL da planilha |
 | P16 | Arquivo de saída – consumidor | ✅ Macro Excel da usuária (batch input) que lança o documento contábil; usa Nº RPS + Nº da nota (Referência) | Demais colunas exclusivas da PMSP vão vazias – validar a macro no teste integrado |
 | P19 | Número da coluna 2 (Nº NFS-e / Referência) | ✅ Nº oficial da NFS-e – disponível no SAP após o passo 03 (J1BNFE) | – |
-| P23 | Campos SAP onde o retorno da Prefeitura grava Nº NFS-e, data/hora de autorização e código de verificação (depende da solução de NFS-e usada no J1BNFE: DRC/GRC/parceiro) | ⏳ verificar no sistema | `J_1BNFDOC-NFENUM` / `J_1BNFE_ACTIVE` |
+| P23 | Campos SAP do retorno da Prefeitura | Nº NFS-e ✅ `J_1BNFDOC-NFENUM`. ⏳ Data/hora de autorização e código de verificação (cols. 3 e 4): verificar numa nota autorizada | `J_1BNFE_ACTIVE`; vazio se não existir |
 | P24 | Passos após o 06 do fluxo do cliente ("customer delivery") e se algum deles é o passo esquecido (P21) | ⏳ cliente | – |
 | P20 | Extensão do arquivo (.csv como o modelo ou .txt) – conteúdo igual (separador `;`) | ⏳ cliente | .csv (parametrizável) |
 | P21 | Passo adicional que o cliente disse ter esquecido de mencionar | ⏳ cliente | – |
