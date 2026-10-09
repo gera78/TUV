@@ -203,7 +203,7 @@ Mesmos blocos do usuário – opções 1, 2 e 3 (com `P_DOCDAT` editável) – +
 | Opção 4 (admin) | Transação `ZNFSE_ADM` + `S_TABU_DIS` (grupo de autorização da tabela) | Padrão SAP |
 | Opção 5 (admin) / "Reprocess errors" | Transação `ZNFSE_ADM` + `F_BKPF_BUK` (ACTVT 06 expurgo / 01 reprocessamento) | Mensagem 021 |
 
-⏳ Confirmar na **SU24 da J1B1N** se existe objeto específico de NF (com BUKRS/ACTVT) que deva substituir ou complementar `F_BKPF_BUK`. ACTVT 01 = Create (TACT) ✅.
+✅ Mesma verificação da transação padrão **J1B1N**: objeto `F_BKPF_BUK` com `BUKRS` e `ACTVT = 01` (Create). Validar no teste com SU53 de um usuário sem acesso.
 
 ---
 
@@ -820,17 +820,17 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | P1 | Destino do RPS | ✅ `J_1BNFDOC-NFNUM` (confirmado pelo cliente) | – |
 | P1a | Série da NF: a PMSP usa série de RPS 900 – a série do NF type Z1 (J_1BAA) deve ser 900? | ⏳ cliente | Série do NF type |
 | P2 | Significado do CR | ⏳ | Gravado e exibido no log; não vai à NF |
-| P3 | Objeto de autorização da J1B1N (SU24) | ⏳ | `F_BKPF_BUK` + `S_TCODE` |
+| P3 | Objeto de autorização | ✅ Igual à J1B1N: `F_BKPF_BUK` (BUKRS, ACTVT 01) + `S_TCODE` | – |
 | P4 | Valores fiscais dos parâmetros (TAXTYP, TAXLW, CFOP, ITMTYP, MATUSE) | ⏳ consultor fiscal | – |
 | P5 | Notas da reforma (campos CBS/IBS/NBS/cClassTrib) | ⏳ em implantação | Preenchimento dinâmico |
 | P6 | Significado da coluna AS ("Nacional") | ⏳ | Gravada, sem uso |
-| P7 | Parameter ID do DOCNUM na J1B3N (`JEF`) | ⏳ verificar no sistema | – |
+| P7 | Parameter ID do DOCNUM na J1B3N (`JEF`) | Técnico – o desenvolvedor verifica na codificação (SE11, elemento `J_1BDOCNUM`) | – |
 | P8 | Nomes do header (Developer / IT / Business) | ⏳ | `<TBD>` |
 | P9 | Sugestões (P_TEST, msgs 017–022, 024, 025) | ✅ aprovadas | – |
 | P10 | Chave do RPS duplicado | ✅ BUKRS + BRANCH | – |
 | P11 | Guardar o arquivo original (`FILE_CONTENT`) | 💡 opcional | Não implementado salvo decisão |
-| P12 | Regra 1 linha = 1 NF | ⏳ confirmar com fiscal | 1:1 |
-| P13 | `P_DOCDAT` editável pelo admin e impacto nos livros fiscais / EFD-Reinf / DIRF dos tipos de retenção | ⏳ confirmar com fiscal | Admin pode alterar |
+| P12 | Regra 1 linha = 1 NF | ✅ 1:1 | – |
+| P13 | `P_DOCDAT` editável pelo admin | ✅ Aprovado | – |
 | P14 | Prazo de retenção do log (LGPD) | ⏳ validar com DPO | 5 anos |
 | P15 | Arquivo de saída – PIS/COFINS (cols. 56–57) e CSLL (60): planilha nova não tem PIS/COFINS, e no modelo a nota WINITY de R$ 2.000,00 (NFS-e 38088) tem PIS 33,00 / COFINS 152,00 / CSLL 93,00, diferente das alíquotas do texto (13,00 / 60,00 / 20,00) | ⏳ fiscal | PIS/COFINS `0,00`; CSLL da planilha |
 | P16 | Arquivo de saída – consumidor | ✅ Macro Excel da usuária (batch input) que lança o documento contábil; usa Nº RPS + Nº da nota (Referência) | Demais colunas exclusivas da PMSP vão vazias – validar a macro no teste integrado |
