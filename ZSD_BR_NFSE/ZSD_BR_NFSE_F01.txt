@@ -135,14 +135,17 @@ FORM authority_ok USING    uv_bukrs TYPE bukrs
                            uv_actvt TYPE any
                   CHANGING cv_ok    TYPE abap_bool.
 
-  cv_ok = abap_false.
+  DATA lv_actvt TYPE activ_auth.
+
+  cv_ok    = abap_false.
+  lv_actvt = uv_actvt.          " AUTHORITY-CHECK needs a character-like field
   AUTHORITY-CHECK OBJECT 'F_BKPF_BUK'
     ID 'BUKRS' FIELD uv_bukrs
-    ID 'ACTVT' FIELD uv_actvt.
+    ID 'ACTVT' FIELD lv_actvt.
   IF sy-subrc <> 0.
     RETURN.
   ENDIF.
-  IF uv_actvt = '01'.
+  IF lv_actvt = '01'.
     AUTHORITY-CHECK OBJECT 'S_TCODE' ID 'TCD' FIELD gc_tcode_nf.
     IF sy-subrc <> 0.
       RETURN.
