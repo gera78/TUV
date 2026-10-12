@@ -23,9 +23,22 @@ TYPE-POOLS: icon.
 
 * Needed only so the selection screens can declare SELECT-OPTIONS
 * FOR <table>-<field> on the solution's own tables.
+* ZSD_BR_NFSE_DATA is not listed: it has a STRING field
+* (SERVICE_DESCR) and TABLES accepts flat structures only - see
+* GS_SCR_DATA below.
 TABLES: zsd_br_nfse_file,
-        zsd_br_nfse_data,
         zsd_br_nfse_log.
+
+* Flat reference fields for the SELECT-OPTIONS on ZSD_BR_NFSE_DATA
+DATA:
+  BEGIN OF gs_scr_data,
+    status       TYPE zsd_br_nfse_data-status,
+    kunnr        TYPE zsd_br_nfse_data-kunnr,
+    rps_number   TYPE zsd_br_nfse_data-rps_number,
+    docnum       TYPE zsd_br_nfse_data-docnum,
+    service_date TYPE zsd_br_nfse_data-service_date,
+    service_code TYPE zsd_br_nfse_data-service_code,
+  END OF gs_scr_data.
 
 *---------------------------------------------------------------------*
 * Constants
@@ -240,7 +253,7 @@ TYPES:
     branch        TYPE j_1bbranc_,
     nfenum        TYPE j_1bnfdoc-nfenum,
     authcod       TYPE j_1bnfdoc-authcod,
-    authdat       TYPE j_1bnfdoc-authdat,
+    authdate       TYPE j_1bnfdoc-authdate,
     authtime      TYPE j_1bnfdoc-authtime,
     nfse_state    TYPE char40,                    " export list: authorization state text
     cancelled     TYPE j_1bnfdoc-cancel,

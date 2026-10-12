@@ -145,7 +145,7 @@ FORM fill_alv USING ut_files TYPE gty_file_tab
       INTO TABLE @lt_log.
     SORT lt_log BY file_id line_id log_item.
 
-    SELECT docnum, nfenum, authcod, authdat, authtime, cancel FROM j_1bnfdoc
+    SELECT docnum, nfenum, authcod, authdate, authtime, cancel FROM j_1bnfdoc
       FOR ALL ENTRIES IN @ut_data
       WHERE docnum = @ut_data-docnum
       INTO TABLE @DATA(lt_nf).
@@ -170,7 +170,7 @@ FORM fill_alv USING ut_files TYPE gty_file_tab
       IF sy-subrc = 0.
         ls_alv-nfenum    = ls_nf-nfenum.
         ls_alv-authcod   = ls_nf-authcod.
-        ls_alv-authdat   = ls_nf-authdat.
+        ls_alv-authdate   = ls_nf-authdate.
         ls_alv-authtime  = ls_nf-authtime.
         ls_alv-cancelled = ls_nf-cancel.
       ENDIF.

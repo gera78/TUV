@@ -52,10 +52,10 @@ SELECTION-SCREEN BEGIN OF BLOCK b_log WITH FRAME TITLE TEXT-b03.
     s_ldate  FOR zsd_br_nfse_file-exec_date  MODIF ID log,
     s_luser  FOR zsd_br_nfse_file-exec_user  MODIF ID log,
     s_lfstat FOR zsd_br_nfse_file-status     MODIF ID log,
-    s_llstat FOR zsd_br_nfse_data-status     MODIF ID log,
-    s_lkunnr FOR zsd_br_nfse_data-kunnr      MODIF ID log,
-    s_lrps   FOR zsd_br_nfse_data-rps_number MODIF ID log,
-    s_ldocn  FOR zsd_br_nfse_data-docnum     MODIF ID log,
+    s_llstat FOR gs_scr_data-status     MODIF ID log,
+    s_lkunnr FOR gs_scr_data-kunnr      MODIF ID log,
+    s_lrps   FOR gs_scr_data-rps_number MODIF ID log,
+    s_ldocn  FOR gs_scr_data-docnum     MODIF ID log,
     s_lmsgno FOR zsd_br_nfse_log-msgno       MODIF ID log.
   PARAMETERS:
     p_lerr AS CHECKBOX MODIF ID log.
@@ -68,12 +68,12 @@ SELECTION-SCREEN BEGIN OF BLOCK b_exp WITH FRAME TITLE TEXT-b04.
   SELECT-OPTIONS:
     s_xbukrs FOR zsd_br_nfse_file-bukrs        MODIF ID exp,
     s_xbranc FOR zsd_br_nfse_file-branch       MODIF ID exp,
-    s_xrps   FOR zsd_br_nfse_data-rps_number   MODIF ID exp,
-    s_xsrvdt FOR zsd_br_nfse_data-service_date MODIF ID exp,
+    s_xrps   FOR gs_scr_data-rps_number   MODIF ID exp,
+    s_xsrvdt FOR gs_scr_data-service_date MODIF ID exp,
     s_xexdt  FOR zsd_br_nfse_file-exec_date    MODIF ID exp,
     s_xfile  FOR zsd_br_nfse_file-file_id      MODIF ID exp,
-    s_xkunnr FOR zsd_br_nfse_data-kunnr        MODIF ID exp,
-    s_xsrvcd FOR zsd_br_nfse_data-service_code MODIF ID exp.
+    s_xkunnr FOR gs_scr_data-kunnr        MODIF ID exp,
+    s_xsrvcd FOR gs_scr_data-service_code MODIF ID exp.
   PARAMETERS:
 * Taxation type: I = service inside São Paulo, O = outside, blank = both
     p_xsitu TYPE char1 MODIF ID exp,

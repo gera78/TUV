@@ -437,8 +437,8 @@ FORM build_csv_fields USING    us_alv    TYPE gty_alv
   lv_text = condense( CONV string( us_alv-nfenum ) ).
   SHIFT lv_text LEFT DELETING LEADING '0'.
   ct_fields[ 2 ] = lv_text.
-  IF us_alv-authdat IS NOT INITIAL.
-    ct_fields[ 3 ] = |{ us_alv-authdat+6(2) }/{ us_alv-authdat+4(2) }/{ us_alv-authdat(4) } | &&
+  IF us_alv-authdate IS NOT INITIAL.
+    ct_fields[ 3 ] = |{ us_alv-authdate+6(2) }/{ us_alv-authdate+4(2) }/{ us_alv-authdate(4) } | &&
                      |{ us_alv-authtime(2) }:{ us_alv-authtime+2(2) }:{ us_alv-authtime+4(2) }|.
   ENDIF.
   ct_fields[ 4 ] = us_alv-authcod.
