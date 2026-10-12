@@ -179,7 +179,10 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 FORM check_authority.
 
-  DATA(lt_types) = VALUE string_table( ( `DOMA` ) ( `DTEL` ) ( `TABL` ) ( `MSAG` ) ).
+  DATA lt_types TYPE STANDARD TABLE OF trobjtype WITH DEFAULT KEY.
+
+* Object types as character fields - AUTHORITY-CHECK does not accept strings
+  lt_types = VALUE #( ( 'DOMA' ) ( 'DTEL' ) ( 'TABL' ) ( 'MSAG' ) ).
 
   LOOP AT lt_types INTO DATA(lv_type).
     AUTHORITY-CHECK OBJECT 'S_DEVELOP'
