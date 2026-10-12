@@ -500,13 +500,13 @@ FORM build_csv_fields USING    us_alv    TYPE gty_alv
     ENDLOOP.
   ENDIF.
   ct_fields[ 38 ] = us_alv-taker_name.
-  ct_fields[ 39 ] = us_alv-taker_street_type.
+  ct_fields[ 39 ] = us_alv-taker_str_type.
   ct_fields[ 40 ] = us_alv-taker_street.
   ct_fields[ 41 ] = us_alv-taker_house_num.
   ct_fields[ 43 ] = us_alv-taker_district.
   ct_fields[ 44 ] = us_alv-taker_city.
   ct_fields[ 45 ] = us_alv-taker_region.
-  ct_fields[ 46 ] = us_alv-taker_postal_code.
+  ct_fields[ 46 ] = us_alv-taker_post_code.
 
 * 50 - 69: ISS to pay, intermediary, federal taxes, site, place
   ct_fields[ 50 ] = lv_iss.                                  " ISS to pay = ISS due
@@ -522,7 +522,7 @@ FORM build_csv_fields USING    us_alv    TYPE gty_alv
   ct_fields[ 64 ] = '0'.
   ct_fields[ 65 ] = '0'.
   ct_fields[ 66 ] = COND #( WHEN us_alv-outside_sp_flag = gc_yes
-                            THEN CONV string( us_alv-service_city_code ) ELSE '0' ).
+                            THEN CONV string( us_alv-serv_city_code ) ELSE '0' ).
   ct_fields[ 68 ] = '0'.
   ct_fields[ 69 ] = '0,00'.
 
@@ -530,8 +530,8 @@ FORM build_csv_fields USING    us_alv    TYPE gty_alv
   PERFORM get_param USING gc_p_srv_descr gc_col_service_code us_alv-service_code
                     CHANGING lv_text lv_found.
   ct_fields[ 73 ] = COND #( WHEN lv_found = abap_true AND lv_text IS NOT INITIAL
-                            THEN |{ lv_text }\|\|{ us_alv-service_description }|
-                            ELSE us_alv-service_description ).
+                            THEN |{ lv_text }\|\|{ us_alv-service_descr }|
+                            ELSE us_alv-service_descr ).
 
 * Clean every field: no separator, no line breaks, accents optional
   PERFORM get_param_text USING gc_p_rm_accents abap_true CHANGING lv_text.

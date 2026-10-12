@@ -1,0 +1,905 @@
+*---------------------------------------------------------------------*
+* Report    ZSD_BR_NFSE_DDIC_GEN                                      *
+*---------------------------------------------------------------------*
+* Date:                 12.10.2026                                    *
+* Developer:            Renato Santos                                 *
+* IT Responsible:       Renato Santos                                 *
+* Business Responsible: Juliana Reimberg                              *
+*---------------------------------------------------------------------*
+* Functional description                                              *
+* One-off generator for the dictionary objects of the NFS-e upload    *
+* solution (ZSD_BR_NFSE_UPLOAD / _ADM). Run once in the development   *
+* system, BEFORE the programs are activated. It creates, registers in *
+* the package and records in the transport request:                   *
+*   - 7 domains (with fixed values)                                   *
+*   - 71 data elements (English labels)                               *
+*   - 4 tables ZSD_BR_NFSE_FILE / _DATA / _LOG / _PARM                *
+*   - message class ZSD_BR_NFSE_MSG with messages 001 - 046           *
+* Objects that already exist are skipped, never overwritten.          *
+* "Test run" (default) only lists what would be created.              *
+* Master language of every object: English (guideline item 11).       *
+* Still manual afterwards (see ZSD_BR_NFSE_DDIC.md): number range     *
+* ZNFSE_FILE, maintenance dialog of ZSD_BR_NFSE_PARM (SE54),          *
+* secondary indexes, transactions, GUI statuses, text symbols.        *
+* Uses the dictionary function modules behind SE11 (DDIF_*_PUT /      *
+* DDIF_*_ACTIVATE) - not released by SAP, development system only.    *
+*---------------------------------------------------------------------*
+* Authorization logic                                                 *
+* S_DEVELOP (package, object type, ACTVT 02) checked before anything  *
+* is created. The DDIF function modules and the transport functions   *
+* perform their own standard checks as well.                          *
+*---------------------------------------------------------------------*
+* Change history                                                      *
+* 12.10.2026  Renato Santos                                           *
+* Initial version.                                                    *
+*---------------------------------------------------------------------*
+REPORT zsd_br_nfse_ddic_gen.
+
+TYPE-POOLS: icon.
+
+*---------------------------------------------------------------------*
+* Constants
+*---------------------------------------------------------------------*
+CONSTANTS:
+  gc_lang       TYPE spras    VALUE 'E',        " master language: English
+  gc_msgid      TYPE arbgb    VALUE 'ZSD_BR_NFSE_MSG',
+  gc_msg_text   TYPE natxt    VALUE 'NFS-e upload and NF Writer creation',
+  gc_amount_tab TYPE tabname  VALUE 'ZSD_BR_NFSE_DATA',
+  gc_pgmid      TYPE pgmid    VALUE 'R3TR'.
+
+*---------------------------------------------------------------------*
+* Types
+*---------------------------------------------------------------------*
+TYPES:
+  BEGIN OF gty_domain,
+    name      TYPE domname,
+    datatype  TYPE datatype_d,
+    leng      TYPE ddleng,
+    decimals  TYPE decimals,
+    lowercase TYPE lowercase,
+    text      TYPE as4text,
+  END OF gty_domain,
+  BEGIN OF gty_fixval,
+    domname TYPE domname,
+    valpos  TYPE valpos,
+    value   TYPE domvalue_l,
+    text    TYPE val_text,
+  END OF gty_fixval,
+  BEGIN OF gty_dtel,
+    name     TYPE rollname,
+    domname  TYPE domname,          " domain-based, or ...
+    datatype TYPE datatype_d,       " ... predefined type
+    leng     TYPE ddleng,
+    decimals TYPE decimals,
+    short    TYPE scrtext_s,
+    medium   TYPE scrtext_m,
+    long     TYPE scrtext_l,
+  END OF gty_dtel,
+  BEGIN OF gty_table,
+    name     TYPE tabname,
+    text     TYPE as4text,
+    contflag TYPE contflag,
+    tabart   TYPE tabart,
+    tabkat   TYPE tabkat,
+    logging  TYPE abap_bool,
+  END OF gty_table,
+  BEGIN OF gty_field,
+    tabname   TYPE tabname,
+    fieldname TYPE fieldname,
+    key       TYPE abap_bool,
+    rollname  TYPE rollname,
+    reftable  TYPE tabname,
+    reffield  TYPE fieldname,
+  END OF gty_field,
+  BEGIN OF gty_message,
+    msgnr TYPE msgnr,
+    text  TYPE natxt,
+  END OF gty_message,
+  BEGIN OF gty_result,
+    icon    TYPE icon_d,
+    objtype TYPE trobjtype,
+    objname TYPE sobj_name,
+    action  TYPE char30,
+    message TYPE bapi_msg,
+  END OF gty_result.
+
+*---------------------------------------------------------------------*
+* Global data
+*---------------------------------------------------------------------*
+DATA:
+  gt_domain  TYPE STANDARD TABLE OF gty_domain,
+  gt_fixval  TYPE STANDARD TABLE OF gty_fixval,
+  gt_dtel    TYPE STANDARD TABLE OF gty_dtel,
+  gt_table   TYPE STANDARD TABLE OF gty_table,
+  gt_field   TYPE STANDARD TABLE OF gty_field,
+  gt_message TYPE STANDARD TABLE OF gty_message,
+  gt_result  TYPE STANDARD TABLE OF gty_result.
+
+*---------------------------------------------------------------------*
+* Selection screen
+*---------------------------------------------------------------------*
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-b01.
+  PARAMETERS:
+    p_devc   TYPE devclass DEFAULT 'ZSD_BR_NFSE' OBLIGATORY,
+    p_trkorr TYPE trkorr,
+    p_test   AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN END OF BLOCK b1.
+
+*---------------------------------------------------------------------*
+AT SELECTION-SCREEN.
+*---------------------------------------------------------------------*
+  PERFORM check_selection.
+
+*---------------------------------------------------------------------*
+START-OF-SELECTION.
+*---------------------------------------------------------------------*
+  PERFORM check_authority.
+  PERFORM fill_definitions.
+
+  PERFORM process_domains.
+  PERFORM process_data_elements.
+  PERFORM process_tables.
+  PERFORM process_messages.
+
+  PERFORM display_result.
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_SELECTION
+*&---------------------------------------------------------------------*
+* Package must exist and must not be local; a real run needs an open
+* (modifiable) transport request.
+*----------------------------------------------------------------------*
+FORM check_selection.
+
+  IF p_devc(1) = '$'.
+    MESSAGE 'Use a transportable package, not a local one' TYPE 'E'.
+  ENDIF.
+  SELECT SINGLE devclass FROM tdevc WHERE devclass = @p_devc INTO @DATA(lv_devc).
+  IF sy-subrc <> 0.
+    MESSAGE |Package { p_devc } does not exist| TYPE 'E'.
+  ENDIF.
+
+  IF p_test = abap_false.
+    IF p_trkorr IS INITIAL.
+      MESSAGE 'Enter a transport request for a real run' TYPE 'E'.
+    ENDIF.
+    SELECT SINGLE trkorr FROM e070
+      WHERE trkorr   = @p_trkorr
+        AND trstatus = 'D'
+      INTO @DATA(lv_trkorr).
+    IF sy-subrc <> 0.
+      MESSAGE |Request { p_trkorr } does not exist or is not modifiable| TYPE 'E'.
+    ENDIF.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_AUTHORITY
+*&---------------------------------------------------------------------*
+FORM check_authority.
+
+  DATA(lt_types) = VALUE string_table( ( `DOMA` ) ( `DTEL` ) ( `TABL` ) ( `MSAG` ) ).
+
+  LOOP AT lt_types INTO DATA(lv_type).
+    AUTHORITY-CHECK OBJECT 'S_DEVELOP'
+      ID 'DEVCLASS' FIELD p_devc
+      ID 'OBJTYPE'  FIELD lv_type
+      ID 'OBJNAME'  DUMMY
+      ID 'P_GROUP'  DUMMY
+      ID 'ACTVT'    FIELD '02'.
+    IF sy-subrc <> 0.
+      MESSAGE |No development authorization for { lv_type } in package { p_devc }| TYPE 'E'.
+    ENDIF.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  FILL_DEFINITIONS
+*&---------------------------------------------------------------------*
+* Object definitions - same content as ZSD_BR_NFSE_DDIC.md.
+*----------------------------------------------------------------------*
+FORM fill_definitions.
+
+* Domains and fixed values
+  gt_domain = VALUE #(
+    ( name = 'ZSD_BR_NFSE_FILE_STATUS' datatype = 'CHAR' leng = 1 decimals = 0 lowercase = ' ' text = 'File status' )
+    ( name = 'ZSD_BR_NFSE_LINE_STATUS' datatype = 'CHAR' leng = 1 decimals = 0 lowercase = ' ' text = 'Line status' )
+    ( name = 'ZSD_BR_NFSE_YES_NO' datatype = 'CHAR' leng = 1 decimals = 0 lowercase = ' ' text = 'Yes / No' )
+    ( name = 'ZSD_BR_NFSE_AMOUNT' datatype = 'CURR' leng = 15 decimals = 2 lowercase = ' ' text = 'Amount' )
+    ( name = 'ZSD_BR_NFSE_RATE' datatype = 'DEC' leng = 7 decimals = 4 lowercase = ' ' text = 'Rate (fraction)' )
+    ( name = 'ZSD_BR_NFSE_TEXT60' datatype = 'CHAR' leng = 60 decimals = 0 lowercase = 'X' text = 'Text 60, lower case' )
+    ( name = 'ZSD_BR_NFSE_TEXT255' datatype = 'CHAR' leng = 255 decimals = 0 lowercase = 'X' text = 'Text 255, lower case' )
+  ).
+  gt_fixval = VALUE #(
+    ( domname = 'ZSD_BR_NFSE_FILE_STATUS' valpos = '0001' value = 'S' text = 'Success' )
+    ( domname = 'ZSD_BR_NFSE_FILE_STATUS' valpos = '0002' value = 'P' text = 'Partially processed' )
+    ( domname = 'ZSD_BR_NFSE_FILE_STATUS' valpos = '0003' value = 'E' text = 'Error' )
+    ( domname = 'ZSD_BR_NFSE_LINE_STATUS' valpos = '0001' value = 'S' text = 'Success' )
+    ( domname = 'ZSD_BR_NFSE_LINE_STATUS' valpos = '0002' value = 'E' text = 'Error' )
+    ( domname = 'ZSD_BR_NFSE_LINE_STATUS' valpos = '0003' value = 'V' text = 'Validated (test run)' )
+    ( domname = 'ZSD_BR_NFSE_YES_NO' valpos = '0001' value = 'Y' text = 'Yes' )
+    ( domname = 'ZSD_BR_NFSE_YES_NO' valpos = '0002' value = 'N' text = 'No' )
+  ).
+
+* Data elements
+  gt_dtel = VALUE #(
+    ( name = 'ZSD_BR_NFSE_FILE_ID' datatype = 'NUMC' leng = 10 decimals = 0 short = 'File ID' medium = 'File ID' long = 'File ID' )
+    ( name = 'ZSD_BR_NFSE_LINE_ID' datatype = 'NUMC' leng = 6 decimals = 0 short = 'Row' medium = 'Excel Row' long = 'Excel Row' )
+    ( name = 'ZSD_BR_NFSE_LOG_ITEM' datatype = 'NUMC' leng = 4 decimals = 0 short = 'Item' medium = 'Log Item' long = 'Log Item' )
+    ( name = 'ZSD_BR_NFSE_FILE_NAME' domname = 'ZSD_BR_NFSE_TEXT255' short = 'File' medium = 'File Name' long = 'File Name' )
+    ( name = 'ZSD_BR_NFSE_FILE_PATH' domname = 'ZSD_BR_NFSE_TEXT255' short = 'Path' medium = 'File Path' long = 'File Path' )
+    ( name = 'ZSD_BR_NFSE_FILE_STATUS' domname = 'ZSD_BR_NFSE_FILE_STATUS' short = 'File St.' medium = 'File Status' long = 'File Status' )
+    ( name = 'ZSD_BR_NFSE_LINE_STATUS' domname = 'ZSD_BR_NFSE_LINE_STATUS' short = 'Line St.' medium = 'Line Status' long = 'Line Status' )
+    ( name = 'ZSD_BR_NFSE_LINE_COUNT' datatype = 'INT4' leng = 10 decimals = 0 short = 'Lines' medium = 'Number of Lines' long = 'Number of Lines' )
+    ( name = 'ZSD_BR_NFSE_SUCCESS_COUNT' datatype = 'INT4' leng = 10 decimals = 0 short = 'Success' medium = 'Lines with Success' long = 'Lines with Success' )
+    ( name = 'ZSD_BR_NFSE_ERROR_COUNT' datatype = 'INT4' leng = 10 decimals = 0 short = 'Errors' medium = 'Lines with Error' long = 'Lines with Error' )
+    ( name = 'ZSD_BR_NFSE_TEST_RUN' datatype = 'CHAR' leng = 1 decimals = 0 short = 'Test Run' medium = 'Validation Only' long = 'Validation Only (Test Run)' )
+    ( name = 'ZSD_BR_NFSE_USER_CANCEL' datatype = 'CHAR' leng = 1 decimals = 0 short = 'Cancelled' medium = 'Cancelled by User' long = 'Cancelled by User' )
+    ( name = 'ZSD_BR_NFSE_CR_CODE' datatype = 'CHAR' leng = 10 decimals = 0 short = 'CR' medium = 'CR' long = 'CR' )
+    ( name = 'ZSD_BR_NFSE_CUST_SHORT_NAME' datatype = 'CHAR' leng = 40 decimals = 0 short = 'Customer' medium = 'Customer Short Name' long = 'Customer Short Name' )
+    ( name = 'ZSD_BR_NFSE_CITY' datatype = 'CHAR' leng = 40 decimals = 0 short = 'City' medium = 'City' long = 'City' )
+    ( name = 'ZSD_BR_NFSE_RPS_NUMBER' datatype = 'CHAR' leng = 15 decimals = 0 short = 'RPS' medium = 'RPS Number' long = 'RPS Number' )
+    ( name = 'ZSD_BR_NFSE_SERVICE_DATE' datatype = 'DATS' leng = 8 decimals = 0 short = 'Serv.Date' medium = 'Service Date' long = 'Service Date' )
+    ( name = 'ZSD_BR_NFSE_SERVICE_AMOUNT' domname = 'ZSD_BR_NFSE_AMOUNT' short = 'Amount' medium = 'Service Amount' long = 'Service Amount' )
+    ( name = 'ZSD_BR_NFSE_CBS_DUE_AMT' domname = 'ZSD_BR_NFSE_AMOUNT' short = 'CBS Due' medium = 'CBS Due' long = 'CBS Due' )
+    ( name = 'ZSD_BR_NFSE_IBS_DUE_AMT' domname = 'ZSD_BR_NFSE_AMOUNT' short = 'IBS Due' medium = 'IBS Due' long = 'IBS Due' )
+    ( name = 'ZSD_BR_NFSE_INSS_AMT' domname = 'ZSD_BR_NFSE_AMOUNT' short = 'INSS' medium = 'INSS' long = 'INSS' )
+    ( name = 'ZSD_BR_NFSE_IRRF_WHT_AMT' domname = 'ZSD_BR_NFSE_AMOUNT' short = 'IRRF Wht' medium = 'IRRF Withheld' long = 'IRRF Withheld' )
+    ( name = 'ZSD_BR_NFSE_CSLL_WHT_AMT' domname = 'ZSD_BR_NFSE_AMOUNT' short = 'CSLL Wht' medium = 'CSLL Withheld' long = 'CSLL Withheld' )
+    ( name = 'ZSD_BR_NFSE_CBS_WHT_AMT' domname = 'ZSD_BR_NFSE_AMOUNT' short = 'CBS Wht' medium = 'CBS Withheld' long = 'CBS Withheld' )
+    ( name = 'ZSD_BR_NFSE_IBS_WHT_AMT' domname = 'ZSD_BR_NFSE_AMOUNT' short = 'IBS Wht' medium = 'IBS Withheld' long = 'IBS Withheld' )
+    ( name = 'ZSD_BR_NFSE_ISS_AMT' domname = 'ZSD_BR_NFSE_AMOUNT' short = 'ISS' medium = 'ISS Amount' long = 'ISS Amount' )
+    ( name = 'ZSD_BR_NFSE_ISS_RATE' domname = 'ZSD_BR_NFSE_RATE' short = 'ISS Rate' medium = 'ISS Rate' long = 'ISS Rate' )
+    ( name = 'ZSD_BR_NFSE_ISS_WHT_FLAG' domname = 'ZSD_BR_NFSE_YES_NO' short = 'ISS Wht' medium = 'ISS Withheld' long = 'ISS Withheld' )
+    ( name = 'ZSD_BR_NFSE_OUTSIDE_SP_FLAG' domname = 'ZSD_BR_NFSE_YES_NO' short = 'Outside SP' medium = 'Outside São Paulo' long = 'Service Outside São Paulo' )
+    ( name = 'ZSD_BR_NFSE_SERVICE_CODE' datatype = 'CHAR' leng = 10 decimals = 0 short = 'Serv.Code' medium = 'Service Code' long = 'Service Code' )
+    ( name = 'ZSD_BR_NFSE_SERV_CITY_CODE' datatype = 'NUMC' leng = 7 decimals = 0 short = 'IBGE' medium = 'Service Municipality' long = 'Service Municipality (IBGE)' )
+    ( name = 'ZSD_BR_NFSE_SERVICE_REGION' datatype = 'CHAR' leng = 3 decimals = 0 short = 'Serv.UF' medium = 'Service Region' long = 'Service Region' )
+    ( name = 'ZSD_BR_NFSE_TAKER_TAX_ID' datatype = 'CHAR' leng = 18 decimals = 0 short = 'Taker ID' medium = 'Taker CPF/CNPJ' long = 'Service Taker CPF/CNPJ' )
+    ( name = 'ZSD_BR_NFSE_TAKER_MUN_REG' datatype = 'CHAR' leng = 20 decimals = 0 short = 'Taker IM' medium = 'Taker Municipal Reg.' long = 'Taker Municipal Registration' )
+    ( name = 'ZSD_BR_NFSE_TAKER_NAME' datatype = 'CHAR' leng = 120 decimals = 0 short = 'Taker' medium = 'Service Taker' long = 'Service Taker Name' )
+    ( name = 'ZSD_BR_NFSE_TAKER_STR_TYPE' datatype = 'CHAR' leng = 10 decimals = 0 short = 'Str.Type' medium = 'Taker Street Type' long = 'Taker Street Type' )
+    ( name = 'ZSD_BR_NFSE_TAKER_STREET' datatype = 'CHAR' leng = 60 decimals = 0 short = 'Street' medium = 'Taker Street' long = 'Taker Street' )
+    ( name = 'ZSD_BR_NFSE_TAKER_HOUSE_NUM' datatype = 'CHAR' leng = 10 decimals = 0 short = 'House No.' medium = 'Taker House Number' long = 'Taker House Number' )
+    ( name = 'ZSD_BR_NFSE_TAKER_DISTRICT' datatype = 'CHAR' leng = 40 decimals = 0 short = 'District' medium = 'Taker District' long = 'Taker District' )
+    ( name = 'ZSD_BR_NFSE_TAKER_CITY' datatype = 'CHAR' leng = 40 decimals = 0 short = 'Taker City' medium = 'Taker City' long = 'Taker City' )
+    ( name = 'ZSD_BR_NFSE_TAKER_REGION' datatype = 'CHAR' leng = 3 decimals = 0 short = 'Taker UF' medium = 'Taker Region' long = 'Taker Region' )
+    ( name = 'ZSD_BR_NFSE_TAKER_POST_CODE' datatype = 'CHAR' leng = 10 decimals = 0 short = 'Post.Code' medium = 'Taker Postal Code' long = 'Taker Postal Code' )
+    ( name = 'ZSD_BR_NFSE_SERVICE_DESCR' datatype = 'STRG' leng = 0 decimals = 0 short = 'Descr.' medium = 'Service Description' long = 'Service Description' )
+    ( name = 'ZSD_BR_NFSE_RCP_TAX_ID' datatype = 'CHAR' leng = 40 decimals = 0 short = 'Rcp. ID' medium = 'Recipient Tax ID' long = 'Recipient Tax ID' )
+    ( name = 'ZSD_BR_NFSE_RCP_NAME' datatype = 'CHAR' leng = 120 decimals = 0 short = 'Recipient' medium = 'Recipient Name' long = 'Recipient Name' )
+    ( name = 'ZSD_BR_NFSE_RCP_ADDRESS' datatype = 'CHAR' leng = 100 decimals = 0 short = 'Rcp. Addr' medium = 'Recipient Address' long = 'Recipient Address' )
+    ( name = 'ZSD_BR_NFSE_RCP_NAT_FOREIGN' datatype = 'CHAR' leng = 1 decimals = 0 short = 'Nat/For.' medium = 'National/Foreign' long = 'Recipient National/Foreign' )
+    ( name = 'ZSD_BR_NFSE_RCP_STREET' datatype = 'CHAR' leng = 60 decimals = 0 short = 'Rcp. Str.' medium = 'Recipient Street' long = 'Recipient Street' )
+    ( name = 'ZSD_BR_NFSE_RCP_HOUSE_NUM' datatype = 'CHAR' leng = 10 decimals = 0 short = 'Rcp. No.' medium = 'Recipient House No.' long = 'Recipient House Number' )
+    ( name = 'ZSD_BR_NFSE_RCP_ADDR_COMPL' datatype = 'CHAR' leng = 60 decimals = 0 short = 'Rcp. Supp' medium = 'Recipient Supplement' long = 'Recipient Address Supplement' )
+    ( name = 'ZSD_BR_NFSE_RCP_DISTRICT' datatype = 'CHAR' leng = 40 decimals = 0 short = 'Rcp. Dist' medium = 'Recipient District' long = 'Recipient District' )
+    ( name = 'ZSD_BR_NFSE_SITE_CIB_CNO' datatype = 'CHAR' leng = 20 decimals = 0 short = 'CIB/CNO' medium = 'Site CIB/CNO' long = 'Site CIB/CNO' )
+    ( name = 'ZSD_BR_NFSE_SITE_NATIONAL' datatype = 'CHAR' leng = 1 decimals = 0 short = 'National' medium = 'Site National' long = 'Site National' )
+    ( name = 'ZSD_BR_NFSE_SITE_POST_CODE' datatype = 'CHAR' leng = 10 decimals = 0 short = 'Site PC' medium = 'Site Postal Code' long = 'Site Postal Code' )
+    ( name = 'ZSD_BR_NFSE_SITE_STREET' datatype = 'CHAR' leng = 60 decimals = 0 short = 'Site Str.' medium = 'Site Street' long = 'Site Street' )
+    ( name = 'ZSD_BR_NFSE_SITE_HOUSE_NUM' datatype = 'CHAR' leng = 10 decimals = 0 short = 'Site No.' medium = 'Site House Number' long = 'Site House Number' )
+    ( name = 'ZSD_BR_NFSE_SITE_ADDR_COMPL' datatype = 'CHAR' leng = 60 decimals = 0 short = 'Site Supp.' medium = 'Site Supplement' long = 'Site Address Supplement' )
+    ( name = 'ZSD_BR_NFSE_SITE_DISTRICT' datatype = 'CHAR' leng = 40 decimals = 0 short = 'Site Dist.' medium = 'Site District' long = 'Site District' )
+    ( name = 'ZSD_BR_NFSE_TAX_CLASS_MAIN' datatype = 'CHAR' leng = 6 decimals = 0 short = 'cClassTrib' medium = 'Main Tax Class.' long = 'Main Tax Classification' )
+    ( name = 'ZSD_BR_NFSE_OPER_IND_CODE' datatype = 'CHAR' leng = 6 decimals = 0 short = 'Oper.Ind.' medium = 'Operation Indicator' long = 'Operation Indicator' )
+    ( name = 'ZSD_BR_NFSE_NBS_CODE' datatype = 'CHAR' leng = 9 decimals = 0 short = 'NBS' medium = 'NBS Code' long = 'NBS Code' )
+    ( name = 'ZSD_BR_NFSE_TAX_CLASS_REG' datatype = 'CHAR' leng = 6 decimals = 0 short = 'Reg.Class' medium = 'Regular Tax Class.' long = 'Regular Tax Classification' )
+    ( name = 'ZSD_BR_NFSE_EXPORT_FILE' domname = 'ZSD_BR_NFSE_TEXT255' short = 'Out. File' medium = 'Last Output File' long = 'Last Output File' )
+    ( name = 'ZSD_BR_NFSE_EXPORT_DATE' datatype = 'DATS' leng = 8 decimals = 0 short = 'Exp. Date' medium = 'Last Export Date' long = 'Last Export Date' )
+    ( name = 'ZSD_BR_NFSE_EXPORT_TIME' datatype = 'TIMS' leng = 6 decimals = 0 short = 'Exp. Time' medium = 'Last Export Time' long = 'Last Export Time' )
+    ( name = 'ZSD_BR_NFSE_EXPORT_USER' datatype = 'CHAR' leng = 12 decimals = 0 short = 'Exp. User' medium = 'Last Exported By' long = 'Last Exported By' )
+    ( name = 'ZSD_BR_NFSE_EXPORT_COUNT' datatype = 'INT2' leng = 5 decimals = 0 short = 'Exports' medium = 'Times Exported' long = 'Times Exported' )
+    ( name = 'ZSD_BR_NFSE_FIELD_NAME' datatype = 'CHAR' leng = 30 decimals = 0 short = 'Parameter' medium = 'Parameter Name' long = 'Parameter Name' )
+    ( name = 'ZSD_BR_NFSE_FILE_COLUMN_NAME' domname = 'ZSD_BR_NFSE_TEXT60' short = 'Column' medium = 'Excel Column Name' long = 'Excel Column Name' )
+    ( name = 'ZSD_BR_NFSE_INPUT_VALUE' domname = 'ZSD_BR_NFSE_TEXT60' short = 'Input' medium = 'Input Value' long = 'Input Value' )
+    ( name = 'ZSD_BR_NFSE_OUTPUT_VALUE' domname = 'ZSD_BR_NFSE_TEXT255' short = 'Output' medium = 'Output Value' long = 'Output Value' )
+  ).
+
+* Tables and fields
+  gt_table = VALUE #(
+    ( name = 'ZSD_BR_NFSE_FILE' text = 'NFS-e upload: file header' contflag = 'A' tabart = 'APPL1' tabkat = '1' logging = ' ' )
+    ( name = 'ZSD_BR_NFSE_DATA' text = 'NFS-e upload: spreadsheet lines' contflag = 'A' tabart = 'APPL1' tabkat = '2' logging = ' ' )
+    ( name = 'ZSD_BR_NFSE_LOG' text = 'NFS-e upload: messages' contflag = 'A' tabart = 'APPL1' tabkat = '2' logging = ' ' )
+    ( name = 'ZSD_BR_NFSE_PARM' text = 'NFS-e upload: parameters' contflag = 'C' tabart = 'APPL2' tabkat = '0' logging = 'X' )
+  ).
+  gt_field = VALUE #(
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'MANDT' key = 'X' rollname = 'MANDT' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'FILE_ID' key = 'X' rollname = 'ZSD_BR_NFSE_FILE_ID' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'FILE_NAME' key = ' ' rollname = 'ZSD_BR_NFSE_FILE_NAME' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'FILE_PATH' key = ' ' rollname = 'ZSD_BR_NFSE_FILE_PATH' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'BUKRS' key = ' ' rollname = 'BUKRS' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'BRANCH' key = ' ' rollname = 'J_1BBRANC_' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'NFTYPE' key = ' ' rollname = 'J_1BNFTYPE' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'DOC_DATE' key = ' ' rollname = 'J_1BDOCDAT' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'EXEC_USER' key = ' ' rollname = 'UNAME' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'EXEC_DATE' key = ' ' rollname = 'DATUM' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'EXEC_TIME' key = ' ' rollname = 'UZEIT' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'LINE_COUNT' key = ' ' rollname = 'ZSD_BR_NFSE_LINE_COUNT' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'SUCCESS_COUNT' key = ' ' rollname = 'ZSD_BR_NFSE_SUCCESS_COUNT' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'ERROR_COUNT' key = ' ' rollname = 'ZSD_BR_NFSE_ERROR_COUNT' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'STATUS' key = ' ' rollname = 'ZSD_BR_NFSE_FILE_STATUS' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'TEST_RUN' key = ' ' rollname = 'ZSD_BR_NFSE_TEST_RUN' )
+    ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'CANCEL_FLAG' key = ' ' rollname = 'ZSD_BR_NFSE_USER_CANCEL' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'MANDT' key = 'X' rollname = 'MANDT' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'FILE_ID' key = 'X' rollname = 'ZSD_BR_NFSE_FILE_ID' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'LINE_ID' key = 'X' rollname = 'ZSD_BR_NFSE_LINE_ID' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'STATUS' key = ' ' rollname = 'ZSD_BR_NFSE_LINE_STATUS' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'DOCNUM' key = ' ' rollname = 'J_1BDOCNUM' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'WAERS' key = ' ' rollname = 'WAERS' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'KUNNR' key = ' ' rollname = 'KUNNR' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'CR_CODE' key = ' ' rollname = 'ZSD_BR_NFSE_CR_CODE' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'CUST_SHORT_NAME' key = ' ' rollname = 'ZSD_BR_NFSE_CUST_SHORT_NAME' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'CITY' key = ' ' rollname = 'ZSD_BR_NFSE_CITY' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'RPS_NUMBER' key = ' ' rollname = 'ZSD_BR_NFSE_RPS_NUMBER' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'PO_NUMBER' key = ' ' rollname = 'BSTKD' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'SERVICE_DATE' key = ' ' rollname = 'ZSD_BR_NFSE_SERVICE_DATE' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'SERVICE_AMOUNT' key = ' ' rollname = 'ZSD_BR_NFSE_SERVICE_AMOUNT' reftable = 'ZSD_BR_NFSE_DATA' reffield = 'WAERS' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'CBS_DUE_AMT' key = ' ' rollname = 'ZSD_BR_NFSE_CBS_DUE_AMT' reftable = 'ZSD_BR_NFSE_DATA' reffield = 'WAERS' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'IBS_DUE_AMT' key = ' ' rollname = 'ZSD_BR_NFSE_IBS_DUE_AMT' reftable = 'ZSD_BR_NFSE_DATA' reffield = 'WAERS' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'INSS_AMT' key = ' ' rollname = 'ZSD_BR_NFSE_INSS_AMT' reftable = 'ZSD_BR_NFSE_DATA' reffield = 'WAERS' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'IRRF_WHT_AMT' key = ' ' rollname = 'ZSD_BR_NFSE_IRRF_WHT_AMT' reftable = 'ZSD_BR_NFSE_DATA' reffield = 'WAERS' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'CSLL_WHT_AMT' key = ' ' rollname = 'ZSD_BR_NFSE_CSLL_WHT_AMT' reftable = 'ZSD_BR_NFSE_DATA' reffield = 'WAERS' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'CBS_WHT_AMT' key = ' ' rollname = 'ZSD_BR_NFSE_CBS_WHT_AMT' reftable = 'ZSD_BR_NFSE_DATA' reffield = 'WAERS' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'IBS_WHT_AMT' key = ' ' rollname = 'ZSD_BR_NFSE_IBS_WHT_AMT' reftable = 'ZSD_BR_NFSE_DATA' reffield = 'WAERS' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'ISS_AMT' key = ' ' rollname = 'ZSD_BR_NFSE_ISS_AMT' reftable = 'ZSD_BR_NFSE_DATA' reffield = 'WAERS' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'ISS_RATE' key = ' ' rollname = 'ZSD_BR_NFSE_ISS_RATE' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'ISS_WHT_FLAG' key = ' ' rollname = 'ZSD_BR_NFSE_ISS_WHT_FLAG' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'OUTSIDE_SP_FLAG' key = ' ' rollname = 'ZSD_BR_NFSE_OUTSIDE_SP_FLAG' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'SERVICE_CODE' key = ' ' rollname = 'ZSD_BR_NFSE_SERVICE_CODE' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'SERV_CITY_CODE' key = ' ' rollname = 'ZSD_BR_NFSE_SERV_CITY_CODE' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'SERVICE_REGION' key = ' ' rollname = 'ZSD_BR_NFSE_SERVICE_REGION' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'TAKER_TAX_ID' key = ' ' rollname = 'ZSD_BR_NFSE_TAKER_TAX_ID' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'TAKER_MUN_REG' key = ' ' rollname = 'ZSD_BR_NFSE_TAKER_MUN_REG' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'TAKER_NAME' key = ' ' rollname = 'ZSD_BR_NFSE_TAKER_NAME' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'TAKER_STR_TYPE' key = ' ' rollname = 'ZSD_BR_NFSE_TAKER_STR_TYPE' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'TAKER_STREET' key = ' ' rollname = 'ZSD_BR_NFSE_TAKER_STREET' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'TAKER_HOUSE_NUM' key = ' ' rollname = 'ZSD_BR_NFSE_TAKER_HOUSE_NUM' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'TAKER_DISTRICT' key = ' ' rollname = 'ZSD_BR_NFSE_TAKER_DISTRICT' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'TAKER_CITY' key = ' ' rollname = 'ZSD_BR_NFSE_TAKER_CITY' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'TAKER_REGION' key = ' ' rollname = 'ZSD_BR_NFSE_TAKER_REGION' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'TAKER_POST_CODE' key = ' ' rollname = 'ZSD_BR_NFSE_TAKER_POST_CODE' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'SERVICE_DESCR' key = ' ' rollname = 'ZSD_BR_NFSE_SERVICE_DESCR' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'RCP_TAX_ID' key = ' ' rollname = 'ZSD_BR_NFSE_RCP_TAX_ID' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'RCP_NAME' key = ' ' rollname = 'ZSD_BR_NFSE_RCP_NAME' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'RCP_EMAIL' key = ' ' rollname = 'AD_SMTPADR' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'RCP_ADDRESS' key = ' ' rollname = 'ZSD_BR_NFSE_RCP_ADDRESS' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'RCP_NAT_FOREIGN' key = ' ' rollname = 'ZSD_BR_NFSE_RCP_NAT_FOREIGN' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'RCP_STREET' key = ' ' rollname = 'ZSD_BR_NFSE_RCP_STREET' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'RCP_HOUSE_NUM' key = ' ' rollname = 'ZSD_BR_NFSE_RCP_HOUSE_NUM' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'RCP_ADDR_COMPL' key = ' ' rollname = 'ZSD_BR_NFSE_RCP_ADDR_COMPL' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'RCP_DISTRICT' key = ' ' rollname = 'ZSD_BR_NFSE_RCP_DISTRICT' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'SITE_CIB_CNO' key = ' ' rollname = 'ZSD_BR_NFSE_SITE_CIB_CNO' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'SITE_NATIONAL' key = ' ' rollname = 'ZSD_BR_NFSE_SITE_NATIONAL' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'SITE_POSTAL_CODE' key = ' ' rollname = 'ZSD_BR_NFSE_SITE_POST_CODE' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'SITE_STREET' key = ' ' rollname = 'ZSD_BR_NFSE_SITE_STREET' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'SITE_HOUSE_NUM' key = ' ' rollname = 'ZSD_BR_NFSE_SITE_HOUSE_NUM' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'SITE_ADDR_COMPL' key = ' ' rollname = 'ZSD_BR_NFSE_SITE_ADDR_COMPL' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'SITE_DISTRICT' key = ' ' rollname = 'ZSD_BR_NFSE_SITE_DISTRICT' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'TAX_CLASS_MAIN' key = ' ' rollname = 'ZSD_BR_NFSE_TAX_CLASS_MAIN' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'OPER_IND_CODE' key = ' ' rollname = 'ZSD_BR_NFSE_OPER_IND_CODE' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'NBS_CODE' key = ' ' rollname = 'ZSD_BR_NFSE_NBS_CODE' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'TAX_CLASS_REG' key = ' ' rollname = 'ZSD_BR_NFSE_TAX_CLASS_REG' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'EXPORT_FILE' key = ' ' rollname = 'ZSD_BR_NFSE_EXPORT_FILE' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'EXPORT_DATE' key = ' ' rollname = 'ZSD_BR_NFSE_EXPORT_DATE' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'EXPORT_TIME' key = ' ' rollname = 'ZSD_BR_NFSE_EXPORT_TIME' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'EXPORT_USER' key = ' ' rollname = 'ZSD_BR_NFSE_EXPORT_USER' )
+    ( tabname = 'ZSD_BR_NFSE_DATA' fieldname = 'EXPORT_COUNT' key = ' ' rollname = 'ZSD_BR_NFSE_EXPORT_COUNT' )
+    ( tabname = 'ZSD_BR_NFSE_LOG' fieldname = 'MANDT' key = 'X' rollname = 'MANDT' )
+    ( tabname = 'ZSD_BR_NFSE_LOG' fieldname = 'FILE_ID' key = 'X' rollname = 'ZSD_BR_NFSE_FILE_ID' )
+    ( tabname = 'ZSD_BR_NFSE_LOG' fieldname = 'LINE_ID' key = 'X' rollname = 'ZSD_BR_NFSE_LINE_ID' )
+    ( tabname = 'ZSD_BR_NFSE_LOG' fieldname = 'LOG_ITEM' key = 'X' rollname = 'ZSD_BR_NFSE_LOG_ITEM' )
+    ( tabname = 'ZSD_BR_NFSE_LOG' fieldname = 'MSGTY' key = ' ' rollname = 'SYMSGTY' )
+    ( tabname = 'ZSD_BR_NFSE_LOG' fieldname = 'MSGID' key = ' ' rollname = 'SYMSGID' )
+    ( tabname = 'ZSD_BR_NFSE_LOG' fieldname = 'MSGNO' key = ' ' rollname = 'SYMSGNO' )
+    ( tabname = 'ZSD_BR_NFSE_LOG' fieldname = 'MSGV1' key = ' ' rollname = 'SYMSGV' )
+    ( tabname = 'ZSD_BR_NFSE_LOG' fieldname = 'MSGV2' key = ' ' rollname = 'SYMSGV' )
+    ( tabname = 'ZSD_BR_NFSE_LOG' fieldname = 'MSGV3' key = ' ' rollname = 'SYMSGV' )
+    ( tabname = 'ZSD_BR_NFSE_LOG' fieldname = 'MSGV4' key = ' ' rollname = 'SYMSGV' )
+    ( tabname = 'ZSD_BR_NFSE_LOG' fieldname = 'MESSAGE' key = ' ' rollname = 'BAPI_MSG' )
+    ( tabname = 'ZSD_BR_NFSE_LOG' fieldname = 'LOG_DATE' key = ' ' rollname = 'DATUM' )
+    ( tabname = 'ZSD_BR_NFSE_LOG' fieldname = 'LOG_TIME' key = ' ' rollname = 'UZEIT' )
+    ( tabname = 'ZSD_BR_NFSE_PARM' fieldname = 'MANDT' key = 'X' rollname = 'MANDT' )
+    ( tabname = 'ZSD_BR_NFSE_PARM' fieldname = 'BUKRS' key = 'X' rollname = 'BUKRS' )
+    ( tabname = 'ZSD_BR_NFSE_PARM' fieldname = 'FIELD_NAME' key = 'X' rollname = 'ZSD_BR_NFSE_FIELD_NAME' )
+    ( tabname = 'ZSD_BR_NFSE_PARM' fieldname = 'FILE_COLUMN_NAME' key = 'X' rollname = 'ZSD_BR_NFSE_FILE_COLUMN_NAME' )
+    ( tabname = 'ZSD_BR_NFSE_PARM' fieldname = 'INPUT' key = 'X' rollname = 'ZSD_BR_NFSE_INPUT_VALUE' )
+    ( tabname = 'ZSD_BR_NFSE_PARM' fieldname = 'OUTPUT' key = ' ' rollname = 'ZSD_BR_NFSE_OUTPUT_VALUE' )
+  ).
+
+* Messages of ZSD_BR_NFSE_MSG
+  gt_message = VALUE #(
+    ( msgnr = '001' text = 'Excel layout differs from standard (column &1: expected &2)' )
+    ( msgnr = '002' text = 'Customer &1 does not exist' )
+    ( msgnr = '003' text = 'Tax ID &1 differs from customer &2 master data' )
+    ( msgnr = '004' text = 'Service code not filled' )
+    ( msgnr = '005' text = 'Material could not be determined for service code &1' )
+    ( msgnr = '006' text = 'Service amount must be greater than zero' )
+    ( msgnr = '007' text = 'Total withheld taxes &1 exceed service amount &2' )
+    ( msgnr = '008' text = 'Service date &1 is after issue date &2' )
+    ( msgnr = '009' text = 'Service description is empty' )
+    ( msgnr = '010' text = 'CBS withheld &1 greater than CBS due &2' )
+    ( msgnr = '011' text = 'IBS withheld &1 greater than IBS due &2' )
+    ( msgnr = '012' text = 'Invalid ISS withheld indicator &1 (expected S or N in the spreadsheet)' )
+    ( msgnr = '013' text = 'ISS amount &1 differs from rate x service amount (&2)' )
+    ( msgnr = '014' text = 'Tax group &1 not filled' )
+    ( msgnr = '015' text = 'Service municipality not filled' )
+    ( msgnr = '016' text = 'UF &1 does not match municipality code &2' )
+    ( msgnr = '017' text = 'Duplicate RPS &1 (file &2, line &3)' )
+    ( msgnr = '018' text = 'File &1 could not be read or worksheet &2 not found' )
+    ( msgnr = '019' text = 'Customer &1 not extended to company code &2' )
+    ( msgnr = '020' text = 'Customer &1 is blocked' )
+    ( msgnr = '021' text = 'No authorization for company code &1 / transaction &2' )
+    ( msgnr = '022' text = 'Nota Fiscal &1 created successfully' )
+    ( msgnr = '023' text = 'Tax type not configured for &1' )
+    ( msgnr = '024' text = 'Service date missing or invalid' )
+    ( msgnr = '025' text = 'Parameter &1 not configured for value &2' )
+    ( msgnr = '026' text = 'Probable duplicate of file &1 line &2 (NF &3)' )
+    ( msgnr = '027' text = 'Processing cancelled by user (duplicates found)' )
+    ( msgnr = '028' text = 'Customer &1: address in file differs from master data' )
+    ( msgnr = '029' text = 'Service municipality filled but service is not outside São Paulo' )
+    ( msgnr = '030' text = 'Processing locked by user &1 for company code &2 / business place &3' )
+    ( msgnr = '031' text = 'Business place &1 is not assigned to company code &2' )
+    ( msgnr = '032' text = 'NF type &1 is not an outgoing NF type' )
+    ( msgnr = '033' text = 'File has &1 lines; maximum allowed is &2' )
+    ( msgnr = '034' text = '&1 files deleted (&2 lines, &3 messages)' )
+    ( msgnr = '035' text = 'Line exported to output file &1' )
+    ( msgnr = '036' text = 'Output file &1 could not be written; nothing was recorded' )
+    ( msgnr = '037' text = 'No lines selected for export' )
+    ( msgnr = '038' text = '&1 lines exported to &2' )
+    ( msgnr = '039' text = 'RPS &1 is invalid (numeric, max. 6 digits)' )
+    ( msgnr = '040' text = 'CBS/IBS not sent to the NF (parameter SEND_CBS_IBS is off)' )
+    ( msgnr = '041' text = 'File &1 processed: &2 lines OK, &3 lines with error' )
+    ( msgnr = '042' text = 'No data found for the selection' )
+    ( msgnr = '043' text = 'Select a line first' )
+    ( msgnr = '044' text = 'Simulation: &1 files, &2 lines and &3 messages would be deleted' )
+    ( msgnr = '045' text = 'File &1 has no lines to reprocess' )
+    ( msgnr = '046' text = 'Reprocessing started by &1' )
+  ).
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  PROCESS_DOMAINS
+*&---------------------------------------------------------------------*
+FORM process_domains.
+
+  DATA: ls_dd01v TYPE dd01v,
+        lt_dd07v TYPE STANDARD TABLE OF dd07v,
+        lv_rc    TYPE sysubrc,
+        lv_ok    TYPE abap_bool.
+
+  LOOP AT gt_domain INTO DATA(ls_domain).
+    SELECT SINGLE domname FROM dd01l
+      WHERE domname = @ls_domain-name AND as4local = 'A'
+      INTO @DATA(lv_exists).
+    IF sy-subrc = 0.
+      PERFORM add_result USING icon_led_yellow 'DOMA' ls_domain-name 'Skipped' 'Already exists'.
+      CONTINUE.
+    ENDIF.
+    IF p_test = abap_true.
+      PERFORM add_result USING icon_led_inactive 'DOMA' ls_domain-name 'Would be created' ls_domain-text.
+      CONTINUE.
+    ENDIF.
+
+    CLEAR: ls_dd01v, lt_dd07v.
+    ls_dd01v-domname    = ls_domain-name.
+    ls_dd01v-ddlanguage = gc_lang.
+    ls_dd01v-datatype   = ls_domain-datatype.
+    ls_dd01v-leng       = ls_domain-leng.
+    ls_dd01v-decimals   = ls_domain-decimals.
+    ls_dd01v-lowercase  = ls_domain-lowercase.
+    ls_dd01v-ddtext     = ls_domain-text.
+*   Output length: digits + decimal separator + thousands separators
+    IF ls_domain-datatype = 'CURR' OR ls_domain-datatype = 'DEC'.
+      ls_dd01v-outputlen = ls_domain-leng
+                         + COND i( WHEN ls_domain-decimals > 0 THEN 1 ELSE 0 )
+                         + ( ls_domain-leng - ls_domain-decimals - 1 ) DIV 3.
+    ELSE.
+      ls_dd01v-outputlen = ls_domain-leng.
+    ENDIF.
+
+    LOOP AT gt_fixval INTO DATA(ls_fixval) WHERE domname = ls_domain-name.
+      APPEND VALUE #( domname    = ls_domain-name
+                      valpos     = ls_fixval-valpos
+                      ddlanguage = gc_lang
+                      domvalue_l = ls_fixval-value
+                      ddtext     = ls_fixval-text ) TO lt_dd07v.
+    ENDLOOP.
+    IF lt_dd07v IS NOT INITIAL.
+      ls_dd01v-valexi = abap_true.
+    ENDIF.
+
+    PERFORM register_object USING 'DOMA' ls_domain-name CHANGING lv_ok.
+    CHECK lv_ok = abap_true.
+
+    CALL FUNCTION 'DDIF_DOMA_PUT'
+      EXPORTING
+        name      = ls_domain-name
+        dd01v_wa  = ls_dd01v
+      TABLES
+        dd07v_tab = lt_dd07v
+      EXCEPTIONS
+        OTHERS    = 1.
+    IF sy-subrc <> 0.
+      PERFORM add_result_sy USING 'DOMA' ls_domain-name 'Save failed'.
+      CONTINUE.
+    ENDIF.
+
+    CALL FUNCTION 'DDIF_DOMA_ACTIVATE'
+      EXPORTING
+        name   = ls_domain-name
+      IMPORTING
+        rc     = lv_rc
+      EXCEPTIONS
+        OTHERS = 1.
+    PERFORM add_activation_result USING 'DOMA' ls_domain-name lv_rc sy-subrc.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  PROCESS_DATA_ELEMENTS
+*&---------------------------------------------------------------------*
+FORM process_data_elements.
+
+  DATA: ls_dd04v TYPE dd04v,
+        lv_rc    TYPE sysubrc,
+        lv_ok    TYPE abap_bool.
+
+  LOOP AT gt_dtel INTO DATA(ls_dtel).
+    SELECT SINGLE rollname FROM dd04l
+      WHERE rollname = @ls_dtel-name AND as4local = 'A'
+      INTO @DATA(lv_exists).
+    IF sy-subrc = 0.
+      PERFORM add_result USING icon_led_yellow 'DTEL' ls_dtel-name 'Skipped' 'Already exists'.
+      CONTINUE.
+    ENDIF.
+    IF p_test = abap_true.
+      PERFORM add_result USING icon_led_inactive 'DTEL' ls_dtel-name 'Would be created' ls_dtel-long.
+      CONTINUE.
+    ENDIF.
+
+    CLEAR ls_dd04v.
+    ls_dd04v-rollname   = ls_dtel-name.
+    ls_dd04v-ddlanguage = gc_lang.
+    IF ls_dtel-domname IS NOT INITIAL.
+      ls_dd04v-domname = ls_dtel-domname.
+      ls_dd04v-refkind = 'D'.
+    ELSE.
+*     Predefined ABAP Dictionary type, no domain
+      ls_dd04v-datatype  = ls_dtel-datatype.
+      ls_dd04v-leng      = ls_dtel-leng.
+      ls_dd04v-decimals  = ls_dtel-decimals.
+      ls_dd04v-outputlen = ls_dtel-leng.
+    ENDIF.
+    ls_dd04v-ddtext    = ls_dtel-long.
+    ls_dd04v-reptext   = ls_dtel-medium.
+    ls_dd04v-scrtext_s = ls_dtel-short.
+    ls_dd04v-scrtext_m = ls_dtel-medium.
+    ls_dd04v-scrtext_l = ls_dtel-long.
+    ls_dd04v-headlen   = 20.
+    ls_dd04v-scrlen1   = 10.
+    ls_dd04v-scrlen2   = 20.
+    ls_dd04v-scrlen3   = 40.
+
+    PERFORM register_object USING 'DTEL' ls_dtel-name CHANGING lv_ok.
+    CHECK lv_ok = abap_true.
+
+    CALL FUNCTION 'DDIF_DTEL_PUT'
+      EXPORTING
+        name     = ls_dtel-name
+        dd04v_wa = ls_dd04v
+      EXCEPTIONS
+        OTHERS   = 1.
+    IF sy-subrc <> 0.
+      PERFORM add_result_sy USING 'DTEL' ls_dtel-name 'Save failed'.
+      CONTINUE.
+    ENDIF.
+
+    CALL FUNCTION 'DDIF_DTEL_ACTIVATE'
+      EXPORTING
+        name   = ls_dtel-name
+      IMPORTING
+        rc     = lv_rc
+      EXCEPTIONS
+        OTHERS = 1.
+    PERFORM add_activation_result USING 'DTEL' ls_dtel-name lv_rc sy-subrc.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  PROCESS_TABLES
+*&---------------------------------------------------------------------*
+* Transparent, client-dependent tables. Amount fields refer to
+* ZSD_BR_NFSE_DATA-WAERS. ZSD_BR_NFSE_PARM is customizing (class C),
+* maintainable and with change logging.
+*----------------------------------------------------------------------*
+FORM process_tables.
+
+  DATA: ls_dd02v TYPE dd02v,
+        ls_dd09l TYPE dd09l,
+        lt_dd03p TYPE STANDARD TABLE OF dd03p,
+        lv_pos   TYPE tabfdpos,
+        lv_rc    TYPE sysubrc,
+        lv_ok    TYPE abap_bool.
+
+  LOOP AT gt_table INTO DATA(ls_table).
+    SELECT SINGLE tabname FROM dd02l
+      WHERE tabname = @ls_table-name AND as4local = 'A'
+      INTO @DATA(lv_exists).
+    IF sy-subrc = 0.
+      PERFORM add_result USING icon_led_yellow 'TABL' ls_table-name 'Skipped' 'Already exists'.
+      CONTINUE.
+    ENDIF.
+    IF p_test = abap_true.
+      PERFORM add_result USING icon_led_inactive 'TABL' ls_table-name 'Would be created' ls_table-text.
+      CONTINUE.
+    ENDIF.
+
+    CLEAR: ls_dd02v, ls_dd09l, lt_dd03p, lv_pos.
+    ls_dd02v-tabname    = ls_table-name.
+    ls_dd02v-ddlanguage = gc_lang.
+    ls_dd02v-tabclass   = 'TRANSP'.
+    ls_dd02v-clidep     = abap_true.
+    ls_dd02v-ddtext     = ls_table-text.
+    ls_dd02v-contflag   = ls_table-contflag.
+    ls_dd02v-mainflag   = COND #( WHEN ls_table-contflag = 'C' THEN 'X' ELSE ' ' ).
+    ls_dd02v-exclass    = '1'.                          " cannot be enhanced
+
+    ls_dd09l-tabname  = ls_table-name.
+    ls_dd09l-as4local = 'A'.
+    ls_dd09l-tabkat   = ls_table-tabkat.
+    ls_dd09l-tabart   = ls_table-tabart.
+    ls_dd09l-bufallow = 'N'.                              " no buffering
+    ls_dd09l-protokoll = ls_table-logging.
+
+    LOOP AT gt_field INTO DATA(ls_field) WHERE tabname = ls_table-name.
+      lv_pos = lv_pos + 1.
+      APPEND VALUE #( tabname    = ls_table-name
+                      fieldname  = ls_field-fieldname
+                      ddlanguage = gc_lang
+                      position   = lv_pos
+                      keyflag    = ls_field-key
+                      notnull    = ls_field-key
+                      rollname   = ls_field-rollname
+                      reftable   = ls_field-reftable
+                      reffield   = ls_field-reffield ) TO lt_dd03p.
+    ENDLOOP.
+
+    PERFORM register_object USING 'TABL' ls_table-name CHANGING lv_ok.
+    CHECK lv_ok = abap_true.
+
+    CALL FUNCTION 'DDIF_TABL_PUT'
+      EXPORTING
+        name      = ls_table-name
+        dd02v_wa  = ls_dd02v
+        dd09l_wa  = ls_dd09l
+      TABLES
+        dd03p_tab = lt_dd03p
+      EXCEPTIONS
+        OTHERS    = 1.
+    IF sy-subrc <> 0.
+      PERFORM add_result_sy USING 'TABL' ls_table-name 'Save failed'.
+      CONTINUE.
+    ENDIF.
+
+    CALL FUNCTION 'DDIF_TABL_ACTIVATE'
+      EXPORTING
+        name     = ls_table-name
+        auth_chk = abap_true
+      IMPORTING
+        rc       = lv_rc
+      EXCEPTIONS
+        OTHERS   = 1.
+    PERFORM add_activation_result USING 'TABL' ls_table-name lv_rc sy-subrc.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  PROCESS_MESSAGES
+*&---------------------------------------------------------------------*
+* Message class header (T100A) and texts (T100), English. Existing
+* messages are kept.
+*----------------------------------------------------------------------*
+FORM process_messages.
+
+  DATA: ls_t100a TYPE t100a,
+        lv_ok    TYPE abap_bool,
+        lv_new   TYPE i,
+        lv_kept  TYPE i,
+        lv_action TYPE char30,
+        lv_text  TYPE bapi_msg.
+
+  SELECT SINGLE arbgb FROM t100a WHERE arbgb = @gc_msgid INTO @DATA(lv_exists).
+  DATA(lv_class_exists) = xsdbool( sy-subrc = 0 ).
+
+  IF p_test = abap_true.
+    lv_action = COND #( WHEN lv_class_exists = abap_true THEN 'Messages would be added'
+                        ELSE 'Would be created' ).
+    lv_text = |{ lines( gt_message ) } messages|.
+    PERFORM add_result USING icon_led_inactive 'MSAG' gc_msgid lv_action lv_text.
+    RETURN.
+  ENDIF.
+
+  PERFORM register_object USING 'MSAG' gc_msgid CHANGING lv_ok.
+  IF lv_ok = abap_false.
+    RETURN.
+  ENDIF.
+
+  IF lv_class_exists = abap_false.
+    ls_t100a-arbgb      = gc_msgid.
+    ls_t100a-masterlang = gc_lang.
+    ls_t100a-stext      = gc_msg_text.
+    ls_t100a-respuser   = sy-uname.
+    ls_t100a-lastuser   = sy-uname.
+    ls_t100a-ldate      = sy-datum.
+    ls_t100a-ltime      = sy-uzeit.
+    INSERT t100a FROM ls_t100a.
+  ENDIF.
+
+  LOOP AT gt_message INTO DATA(ls_message).
+    INSERT t100 FROM @( VALUE #( sprsl = gc_lang
+                                 arbgb = gc_msgid
+                                 msgnr = ls_message-msgnr
+                                 text  = ls_message-text ) ).
+    IF sy-subrc = 0.
+      lv_new = lv_new + 1.
+    ELSE.
+      lv_kept = lv_kept + 1.                    " message already there - kept as is
+    ENDIF.
+  ENDLOOP.
+  COMMIT WORK.
+
+  lv_text = |{ lv_new } messages created, { lv_kept } already existed|.
+  PERFORM add_result USING icon_led_green 'MSAG' gc_msgid 'Created' lv_text.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  REGISTER_OBJECT
+*&---------------------------------------------------------------------*
+* Object directory entry (TADIR) in the package and entry in the
+* transport request.
+*----------------------------------------------------------------------*
+FORM register_object USING    uv_type TYPE any
+                              uv_name TYPE any
+                     CHANGING cv_ok   TYPE abap_bool.
+
+  DATA: lt_e071  TYPE STANDARD TABLE OF e071,
+        lt_e071k TYPE STANDARD TABLE OF e071k,
+        lv_type  TYPE trobjtype,
+        lv_name  TYPE sobj_name,
+        lv_text  TYPE bapi_msg.
+
+  cv_ok   = abap_false.
+  lv_type = uv_type.
+  lv_name = uv_name.
+
+  SELECT SINGLE devclass FROM tadir
+    WHERE pgmid = @gc_pgmid AND object = @lv_type AND obj_name = @lv_name
+    INTO @DATA(lv_devclass).
+  IF sy-subrc <> 0.
+    CALL FUNCTION 'TR_TADIR_INTERFACE'
+      EXPORTING
+        wi_test_modus       = abap_false
+        wi_tadir_pgmid      = gc_pgmid
+        wi_tadir_object     = lv_type
+        wi_tadir_obj_name   = lv_name
+        wi_tadir_devclass   = p_devc
+        wi_tadir_masterlang = gc_lang
+      EXCEPTIONS
+        OTHERS              = 1.
+    IF sy-subrc <> 0.
+      PERFORM add_result_sy USING lv_type lv_name 'Object directory entry failed'.
+      RETURN.
+    ENDIF.
+  ELSEIF lv_devclass <> p_devc.
+    lv_text = |Object already registered in package { lv_devclass }|.
+    PERFORM add_result USING icon_led_red lv_type lv_name 'Not created' lv_text.
+    RETURN.
+  ENDIF.
+
+  APPEND VALUE #( pgmid = gc_pgmid object = lv_type obj_name = lv_name ) TO lt_e071.
+  CALL FUNCTION 'TR_APPEND_TO_COMM_OBJS_KEYS'
+    EXPORTING
+      wi_trkorr = p_trkorr
+    TABLES
+      wt_e071   = lt_e071
+      wt_e071k  = lt_e071k
+    EXCEPTIONS
+      OTHERS    = 1.
+  IF sy-subrc <> 0.
+    PERFORM add_result_sy USING lv_type lv_name 'Transport entry failed'.
+    RETURN.
+  ENDIF.
+
+  cv_ok = abap_true.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  ADD_ACTIVATION_RESULT
+*&---------------------------------------------------------------------*
+* RC of DDIF_*_ACTIVATE: 0 active, 4 active with warnings, 8 error.
+*----------------------------------------------------------------------*
+FORM add_activation_result USING uv_type  TYPE any
+                                 uv_name  TYPE any
+                                 uv_rc    TYPE sysubrc
+                                 uv_subrc TYPE sysubrc.
+
+  IF uv_subrc <> 0.
+    PERFORM add_result_sy USING uv_type uv_name 'Activation failed'.
+  ELSEIF uv_rc = 0.
+    PERFORM add_result USING icon_led_green uv_type uv_name 'Created and activated' ''.
+  ELSEIF uv_rc = 4.
+    PERFORM add_result USING icon_led_yellow uv_type uv_name 'Activated with warnings'
+                             'Check the activation log in SE11'.
+  ELSE.
+    PERFORM add_result USING icon_led_red uv_type uv_name 'Saved, not active'
+                             'Activation error - check the activation log in SE11'.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  ADD_RESULT
+*&---------------------------------------------------------------------*
+FORM add_result USING uv_icon    TYPE icon_d
+                      uv_type    TYPE any
+                      uv_name    TYPE any
+                      uv_action  TYPE any
+                      uv_message TYPE any.
+
+  APPEND VALUE #( icon    = uv_icon
+                  objtype = uv_type
+                  objname = uv_name
+                  action  = uv_action
+                  message = uv_message ) TO gt_result.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  ADD_RESULT_SY
+*&---------------------------------------------------------------------*
+* Error line with the system message of the failed call.
+*----------------------------------------------------------------------*
+FORM add_result_sy USING uv_type   TYPE any
+                         uv_name   TYPE any
+                         uv_action TYPE any.
+
+  DATA lv_text TYPE bapi_msg.
+
+  IF sy-msgid IS NOT INITIAL.
+    MESSAGE ID sy-msgid TYPE 'S' NUMBER sy-msgno
+      WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 INTO lv_text.
+  ENDIF.
+  PERFORM add_result USING icon_led_red uv_type uv_name uv_action lv_text.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  DISPLAY_RESULT
+*&---------------------------------------------------------------------*
+FORM display_result.
+
+  DATA lo_alv TYPE REF TO cl_salv_table.
+
+  TRY.
+      cl_salv_table=>factory( IMPORTING r_salv_table = lo_alv
+                              CHANGING  t_table      = gt_result ).
+      lo_alv->get_functions( )->set_all( abap_true ).
+      lo_alv->get_columns( )->set_optimize( abap_true ).
+      CAST cl_salv_column_table( lo_alv->get_columns( )->get_column( 'ICON' ) )->set_icon( abap_true ).
+      lo_alv->get_display_settings( )->set_list_header(
+        COND #( WHEN p_test = abap_true THEN TEXT-h01 ELSE TEXT-h02 ) ).
+      lo_alv->display( ).
+    CATCH cx_salv_msg cx_salv_not_found INTO DATA(lx_salv).
+      MESSAGE lx_salv TYPE 'I'.
+  ENDTRY.
+
+ENDFORM.

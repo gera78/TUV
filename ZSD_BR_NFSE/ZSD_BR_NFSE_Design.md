@@ -271,7 +271,7 @@ Mesmos blocos do usuário – opções 1, 2 e 3 (com `P_DOCDAT` editável) – +
 |---|---|---|---|---|
 | B | Codigo SAP | KUNNR | `KUNNR` | CHAR 10 (ALPHA) |
 | C | CR | CR_CODE | `ZSD_BR_NFSE_CR_CODE` | CHAR 10 ⏳ |
-| D | Cliente | CUSTOMER_SHORT_NAME | `ZSD_BR_NFSE_CUST_SHORT_NAME` | CHAR 40 |
+| D | Cliente | CUST_SHORT_NAME | `ZSD_BR_NFSE_CUST_SHORT_NAME` | CHAR 40 |
 | E | Cidade | CITY | `ZSD_BR_NFSE_CITY` | CHAR 40 |
 | F | RPS | RPS_NUMBER | `ZSD_BR_NFSE_RPS_NUMBER` | CHAR 15 |
 | G | Pedido de Compra | PO_NUMBER | `BSTKD` | CHAR 35 |
@@ -289,19 +289,19 @@ Mesmos blocos do usuário – opções 1, 2 e 3 (com `P_DOCDAT` editável) – +
 | S | ISS Retido | ISS_WHT_FLAG | `ZSD_BR_NFSE_ISS_WHT_FLAG` | CHAR 1 (Y/N) |
 | T | Prestação de Serviço fora de São Paulo | OUTSIDE_SP_FLAG | `ZSD_BR_NFSE_OUTSIDE_SP_FLAG` | CHAR 1 (Y/N) |
 | U | Código do Serviço Prestado na Nota Fiscal | SERVICE_CODE | `ZSD_BR_NFSE_SERVICE_CODE` | CHAR 10 |
-| V | Município da Prestação do Serviço | SERVICE_CITY_CODE | `ZSD_BR_NFSE_SERV_CITY_CODE` | NUMC 7 (IBGE) |
+| V | Município da Prestação do Serviço | SERV_CITY_CODE | `ZSD_BR_NFSE_SERV_CITY_CODE` | NUMC 7 (IBGE) |
 | W | UF | SERVICE_REGION | `ZSD_BR_NFSE_SERVICE_REGION` | CHAR 3 |
 | X | CPF/CNPJ do Tomador | TAKER_TAX_ID | `ZSD_BR_NFSE_TAKER_TAX_ID` | CHAR 18 |
 | Y | Inscrição Municipal do Tomador | TAKER_MUN_REG | `ZSD_BR_NFSE_TAKER_MUN_REG` | CHAR 20 |
 | Z | Razão Social do Tomador | TAKER_NAME | `ZSD_BR_NFSE_TAKER_NAME` | CHAR 120 |
-| AA | Tipo do Endereço do Tomador | TAKER_STREET_TYPE | `ZSD_BR_NFSE_TAKER_STR_TYPE` | CHAR 10 |
+| AA | Tipo do Endereço do Tomador | TAKER_STR_TYPE | `ZSD_BR_NFSE_TAKER_STR_TYPE` | CHAR 10 |
 | AB | Endereço do Tomador | TAKER_STREET | `ZSD_BR_NFSE_TAKER_STREET` | CHAR 60 |
 | AC | Número do Endereço do Tomador | TAKER_HOUSE_NUM | `ZSD_BR_NFSE_TAKER_HOUSE_NUM` | CHAR 10 (aceita "S/N") |
 | AD | Bairro do Tomador | TAKER_DISTRICT | `ZSD_BR_NFSE_TAKER_DISTRICT` | CHAR 40 |
 | AE | Cidade do Tomador | TAKER_CITY | `ZSD_BR_NFSE_TAKER_CITY` | CHAR 40 |
 | AF | UF do Tomador | TAKER_REGION | `ZSD_BR_NFSE_TAKER_REGION` | CHAR 3 |
-| AG | CEP do Tomador | TAKER_POSTAL_CODE | `ZSD_BR_NFSE_TAKER_POST_CODE` | CHAR 10 |
-| AH | Discriminação dos Serviços | SERVICE_DESCRIPTION | `ZSD_BR_NFSE_SERVICE_DESCR` | STRING (até 2000) |
+| AG | CEP do Tomador | TAKER_POST_CODE | `ZSD_BR_NFSE_TAKER_POST_CODE` | CHAR 10 |
+| AH | Discriminação dos Serviços | SERVICE_DESCR | `ZSD_BR_NFSE_SERVICE_DESCR` | STRING (até 2000) |
 | AI | CPF/CNPJ/NIF/S NIF | RCP_TAX_ID | `ZSD_BR_NFSE_RCP_TAX_ID` | CHAR 40 |
 | AJ | Nome | RCP_NAME | `ZSD_BR_NFSE_RCP_NAME` | CHAR 120 |
 | AK | Email | RCP_EMAIL | `AD_SMTPADR` | CHAR 241 |
@@ -665,11 +665,11 @@ Origem: **D** = `ZSD_BR_NFSE_DATA` (planilha) · **P** = parâmetro · **R** = r
 | 36 | Inscrição Municipal do Tomador | D | TAKER_MUN_REG (vazio se 0) |
 | 37 | Inscrição Estadual do Tomador | M | `KNA1-STCD3` |
 | 38 | Razão Social do Tomador | D | TAKER_NAME |
-| 39 | Tipo do Endereço do Tomador | D | TAKER_STREET_TYPE |
+| 39 | Tipo do Endereço do Tomador | D | TAKER_STR_TYPE |
 | 40 | Endereço do Tomador | D | TAKER_STREET |
 | 41 | Número do Endereço do Tomador | D | TAKER_HOUSE_NUM |
 | 42 | Complemento do Endereço do Tomador | M | Endereço do cliente (BP) |
-| 43–46 | Bairro / Cidade / UF / CEP do Tomador | D | TAKER_DISTRICT / TAKER_CITY / TAKER_REGION / TAKER_POSTAL_CODE |
+| 43–46 | Bairro / Cidade / UF / CEP do Tomador | D | TAKER_DISTRICT / TAKER_CITY / TAKER_REGION / TAKER_POST_CODE |
 | 47 | Email do Tomador | M | E-mail do cliente (BP); vazio se não houver |
 | 48 | Nº NFS-e Substituta | – | Vazio |
 | 49 | ISS pago | – | Vazio |
@@ -684,12 +684,12 @@ Origem: **D** = `ZSD_BR_NFSE_DATA` (planilha) · **P** = parâmetro · **R** = r
 | 61–63 | Carga tributária (valor / % / fonte) | – | Vazio (calculado pela PMSP/IBPT) |
 | 64 | CEI | R | `0` |
 | 65 | Matrícula da Obra | R | `0` |
-| 66 | Município Prestação – cód. IBGE | D | SERVICE_CITY_CODE se OUTSIDE_SP_FLAG = S; senão `0` |
+| 66 | Município Prestação – cód. IBGE | D | SERV_CITY_CODE se OUTSIDE_SP_FLAG = S; senão `0` |
 | 67 | Situação do Aceite | – | Vazio |
 | 68 | Encapsulamento | R | `0` |
 | 69 | Valor Total Recebido | R | `0,00` |
 | 70–72 | Consolidação / Campo reservado | – | Vazio |
-| 73 | Discriminação dos Serviços | D + P | `SRV_DESCRIPTION` do código + `||` + SERVICE_DESCRIPTION (separadores `|` mantidos) |
+| 73 | Discriminação dos Serviços | D + P | `SRV_DESCRIPTION` do código + `||` + SERVICE_DESCR (separadores `|` mantidos) |
 
 ---
 
@@ -732,7 +732,7 @@ Cabeçalho (top-of-list): File ID, arquivo, empresa/local de negócio, status do
 | Status (ícone) | ✔ | S = 🟢 · S com avisos (W) = 🟡 · E = 🔴 · NF cancelada = ⚪ cinza · V (validate only) = 🔵 · não processada = vazio |
 | LINE_ID | ✔ | Linha do Excel |
 | KUNNR | ✔ | |
-| CUSTOMER_SHORT_NAME | ✔ | |
+| CUST_SHORT_NAME | ✔ | |
 | RPS_NUMBER | ✔ | |
 | SERVICE_DATE | ✔ | |
 | SERVICE_AMOUNT | ✔ | Com total |

@@ -345,7 +345,7 @@ FORM display_alv USING uv_mode TYPE char10.
 
   CASE uv_mode.
     WHEN gc_mode_result.
-      lt_visible = VALUE #( ( 'LINE_ICON' ) ( 'LINE_ID' ) ( 'KUNNR' ) ( 'CUSTOMER_SHORT_NAME' )
+      lt_visible = VALUE #( ( 'LINE_ICON' ) ( 'LINE_ID' ) ( 'KUNNR' ) ( 'CUST_SHORT_NAME' )
                             ( 'RPS_NUMBER' ) ( 'SERVICE_DATE' ) ( 'SERVICE_AMOUNT' ) ( 'ISS_AMT' )
                             ( 'SERVICE_CODE' ) ( 'DOCNUM' ) ( 'CANCELLED' ) ( 'MESSAGE' ) ).
     WHEN gc_mode_log.

@@ -2,6 +2,20 @@
 
 Objetos a criar no sistema **antes** de ativar os programas. Ordem de transporte separada para o DDIC (guideline TÜV, item 14a). Classe de entrega das tabelas Z de log: **A**; da tabela de parâmetros: **C**.
 
+## 0. Criação automática – programa ZSD_BR_NFSE_DDIC_GEN
+
+Domínios, elementos de dados, as 4 tabelas e a classe de mensagem podem ser criados de uma vez pelo programa `ZSD_BR_NFSE_DDIC_GEN` (arquivo `ZSD_BR_NFSE_DDIC_GEN.txt`):
+
+1. Criar o programa na SE38 (pacote ZSD_BR_NFSE, mesma ordem de transporte do DDIC), colar o código e ativar.
+2. Textos do programa: seleção P_DEVC "Package", P_TRKORR "Transport request", P_TEST "Test run (nothing is created)"; símbolos B01 "Generation options", H01 "Test run - objects that would be created", H02 "Dictionary objects created".
+3. Rodar com **Test run** marcado e conferir a lista.
+4. Rodar sem Test run, informando a ordem de transporte (modificável).
+5. Conferir a lista: verde = criado e ativo; amarelo = já existia (não é alterado) ou ativado com avisos; vermelho = erro (ver o log de ativação na SE11).
+
+Objetos que já existem nunca são sobrescritos. Continuam manuais: range de numeração, manutenção da ZSD_BR_NFSE_PARM (SE54), índices secundários, transações, status de tela e textos dos programas principais.
+
+O programa é gerado a partir de `tools/spec.py` (definição única dos objetos) com `tools/build.py`; qualquer mudança de campo deve ser feita no `spec.py` e o programa gerado de novo.
+
 ---
 
 ## 1. Domínios
@@ -13,6 +27,8 @@ Objetos a criar no sistema **antes** de ativar os programas. Ordem de transporte
 | ZSD_BR_NFSE_YES_NO | CHAR 1 | Y Yes · N No (a planilha traz S/N e é convertida na carga; o CSV de saída volta a usar S/N, como o portal da Prefeitura) |
 | ZSD_BR_NFSE_AMOUNT | CURR 15,2 | – |
 | ZSD_BR_NFSE_RATE | DEC 7,4 | – |
+| ZSD_BR_NFSE_TEXT60 | CHAR 60, minúsculas permitidas | – (coluna e input da tabela de parâmetros) |
+| ZSD_BR_NFSE_TEXT255 | CHAR 255, minúsculas permitidas | – (nomes de arquivo e output da tabela de parâmetros) |
 
 ## 2. Elementos de dados
 
@@ -120,7 +136,7 @@ Rótulos em inglês (curto / médio / longo). Os não listados usam elemento sta
 
 ### 3.2 ZSD_BR_NFSE_DATA (classe A)
 
-Chave MANDT + FILE_ID + LINE_ID. Campos de controle: STATUS (ZSD_BR_NFSE_LINE_STATUS), DOCNUM (J_1BDOCNUM), WAERS (WAERS – referência de todos os campos CURR). Campos da planilha: os 53 campos da seção 6.3 do documento de desenho (KUNNR … TAX_CLASS_REG), com os elementos de dados da seção 2. Campos de exportação: EXPORT_FILE, EXPORT_DATE, EXPORT_TIME, EXPORT_USER, EXPORT_COUNT.
+Chave MANDT + FILE_ID + LINE_ID. Nomes de campo com no máximo 16 caracteres (limite do dicionário para tabelas transparentes): CUST_SHORT_NAME, SERV_CITY_CODE, TAKER_STR_TYPE, TAKER_POST_CODE, SERVICE_DESCR. Campos de controle: STATUS (ZSD_BR_NFSE_LINE_STATUS), DOCNUM (J_1BDOCNUM), WAERS (WAERS – referência de todos os campos CURR). Campos da planilha: os 53 campos da seção 6.3 do documento de desenho (KUNNR … TAX_CLASS_REG), com os elementos de dados da seção 2. Campos de exportação: EXPORT_FILE, EXPORT_DATE, EXPORT_TIME, EXPORT_USER, EXPORT_COUNT.
 
 Índices secundários: Z01 RPS_NUMBER, STATUS · Z02 KUNNR, SERVICE_DATE · Z03 DOCNUM.
 

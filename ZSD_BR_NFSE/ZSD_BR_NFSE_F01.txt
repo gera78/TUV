@@ -314,7 +314,7 @@ FORM build_layout.
     ( column = 'A'  header = 'ULTIMA RPS UTILIZADA'                          field = '' )
     ( column = 'B'  header = 'Codigo SAP'                                    field = 'KUNNR' )
     ( column = 'C'  header = 'CR'                                            field = 'CR_CODE' )
-    ( column = 'D'  header = 'Cliente'                                       field = 'CUSTOMER_SHORT_NAME' )
+    ( column = 'D'  header = 'Cliente'                                       field = 'CUST_SHORT_NAME' )
     ( column = 'E'  header = 'Cidade'                                        field = 'CITY' )
     ( column = 'F'  header = 'RPS'                                           field = 'RPS_NUMBER' )
     ( column = 'G'  header = 'Pedido de Compra'                              field = 'PO_NUMBER' )
@@ -332,19 +332,19 @@ FORM build_layout.
     ( column = 'S'  header = 'ISS Retido'                                    field = 'ISS_WHT_FLAG' )
     ( column = 'T'  header = 'Prestação de Serviço fora de São Paulo'        field = 'OUTSIDE_SP_FLAG' )
     ( column = 'U'  header = 'Código do Serviço Prestado na Nota Fiscal'     field = 'SERVICE_CODE' )
-    ( column = 'V'  header = 'Município da Prestação do Serviço'             field = 'SERVICE_CITY_CODE' )
+    ( column = 'V'  header = 'Município da Prestação do Serviço'             field = 'SERV_CITY_CODE' )
     ( column = 'W'  header = 'UF'                                            field = 'SERVICE_REGION' )
     ( column = 'X'  header = 'CPF/CNPJ do Tomador'                           field = 'TAKER_TAX_ID' )
     ( column = 'Y'  header = 'Inscrição Municipal do Tomador'                field = 'TAKER_MUN_REG' )
     ( column = 'Z'  header = 'Razão Social do Tomador'                       field = 'TAKER_NAME' )
-    ( column = 'AA' header = 'Tipo do Endereço do Tomador'                   field = 'TAKER_STREET_TYPE' )
+    ( column = 'AA' header = 'Tipo do Endereço do Tomador'                   field = 'TAKER_STR_TYPE' )
     ( column = 'AB' header = 'Endereço do Tomador'                           field = 'TAKER_STREET' )
     ( column = 'AC' header = 'Número do Endereço do Tomador'                 field = 'TAKER_HOUSE_NUM' )
     ( column = 'AD' header = 'Bairro do Tomador'                             field = 'TAKER_DISTRICT' )
     ( column = 'AE' header = 'Cidade do Tomador'                             field = 'TAKER_CITY' )
     ( column = 'AF' header = 'UF do Tomador'                                 field = 'TAKER_REGION' )
-    ( column = 'AG' header = 'CEP do Tomador'                                field = 'TAKER_POSTAL_CODE' )
-    ( column = 'AH' header = 'Discriminação dos Serviços'                    field = 'SERVICE_DESCRIPTION' )
+    ( column = 'AG' header = 'CEP do Tomador'                                field = 'TAKER_POST_CODE' )
+    ( column = 'AH' header = 'Discriminação dos Serviços'                    field = 'SERVICE_DESCR' )
     ( column = 'AI' header = 'CPF/CNPJ/NIF/S NIF'                            field = 'RCP_TAX_ID' )
     ( column = 'AJ' header = 'Nome'                                          field = 'RCP_NAME' )
     ( column = 'AK' header = 'Email'                                         field = 'RCP_EMAIL' )
@@ -604,7 +604,7 @@ FORM convert_cell USING    uv_cell  TYPE string
           IF lv_text = '0'.
             CLEAR lv_text.
           ENDIF.
-        WHEN 'SERVICE_CITY_CODE'.
+        WHEN 'SERV_CITY_CODE'.
           lv_text = replace( val = lv_text regex = `\D` with = `` occ = 0 ).
       ENDCASE.
       cv_value = lv_text.
@@ -1235,7 +1235,7 @@ FORM validate_line USING    us_data  TYPE zsd_br_nfse_data
   ENDIF.
 
 * 009 - description
-  lv_text = condense( us_data-service_description ).
+  lv_text = condense( us_data-service_descr ).
   IF lv_text IS INITIAL.
     PERFORM add_log USING lv_line gc_msgty_error '009' space space space.
     cv_error = abap_true.
@@ -1289,18 +1289,18 @@ FORM validate_line USING    us_data  TYPE zsd_br_nfse_data
   ENDIF.
 
 * 015 / 029 / 016 - place of service
-  IF us_data-outside_sp_flag = gc_yes AND us_data-service_city_code IS INITIAL.
+  IF us_data-outside_sp_flag = gc_yes AND us_data-serv_city_code IS INITIAL.
     PERFORM add_log USING lv_line gc_msgty_error '015' space space space.
     cv_error = abap_true.
   ENDIF.
-  IF us_data-outside_sp_flag = gc_no AND us_data-service_city_code IS NOT INITIAL.
+  IF us_data-outside_sp_flag = gc_no AND us_data-serv_city_code IS NOT INITIAL.
     PERFORM add_log USING lv_line gc_msgty_warning '029' space space space.
   ENDIF.
-  IF us_data-service_city_code IS NOT INITIAL.
+  IF us_data-serv_city_code IS NOT INITIAL.
     PERFORM check_city_region USING us_data CHANGING lv_found.
     IF lv_found = abap_false.
       PERFORM add_log USING lv_line gc_msgty_error '016'
-        us_data-service_region us_data-service_city_code space.
+        us_data-service_region us_data-serv_city_code space.
       cv_error = abap_true.
     ENDIF.
   ENDIF.
@@ -1339,7 +1339,7 @@ FORM check_city_region USING    us_data TYPE zsd_br_nfse_data
     ( code = '42' uf = 'SC' ) ( code = '43' uf = 'RS' ) ( code = '50' uf = 'MS' )
     ( code = '51' uf = 'MT' ) ( code = '52' uf = 'GO' ) ( code = '53' uf = 'DF' ) ).
 
-  DATA(lv_code) = CONV string( us_data-service_city_code ).
+  DATA(lv_code) = CONV string( us_data-serv_city_code ).
   cv_ok = abap_false.
   IF strlen( lv_code ) <> 7 OR lv_code CN '0123456789'.
     RETURN.
@@ -1957,7 +1957,7 @@ FORM build_bapi_texts USING    us_data TYPE zsd_br_nfse_data
         lv_line  TYPE string,
         lv_seq   TYPE i.
 
-  SPLIT us_data-service_description AT '|' INTO TABLE lt_parts.
+  SPLIT us_data-service_descr AT '|' INTO TABLE lt_parts.
 
   LOOP AT lt_parts INTO DATA(lv_part).
     CONDENSE lv_part.
