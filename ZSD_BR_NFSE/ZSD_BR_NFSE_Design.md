@@ -215,7 +215,7 @@ Mesmos blocos do usuário – opções 1, 2 e 3 (com `P_DOCDAT` editável) – +
 |---|---|---|
 | `ZSD_BR_NFSE_FILE_STATUS` | CHAR 1 | S = Success · P = Partially processed · E = Error |
 | `ZSD_BR_NFSE_LINE_STATUS` | CHAR 1 | ' ' = Not processed · S = Success · E = Error · V = Validated (test run, sem NF) |
-| `ZSD_BR_NFSE_YES_NO` | CHAR 1 | S = Yes (Sim) · N = No (Não) – valores como vêm da planilha |
+| `ZSD_BR_NFSE_YES_NO` | CHAR 1 | Y = Yes · N = No (a planilha traz S/N, convertido na carga; o CSV de saída usa S/N como o portal) |
 | `ZSD_BR_NFSE_AMOUNT` | CURR 15,2 | – |
 | `ZSD_BR_NFSE_RATE` | DEC 7,4 | – (fração, ex. 0,0500) |
 
@@ -286,8 +286,8 @@ Mesmos blocos do usuário – opções 1, 2 e 3 (com `P_DOCDAT` editável) – +
 | P | IBS RETIDO | IBS_WHT_AMT | `ZSD_BR_NFSE_IBS_WHT_AMT` | CURR 15,2 |
 | Q | ISS RETIDO/DEVIDO | ISS_AMT | `ZSD_BR_NFSE_ISS_AMT` | CURR 15,2 |
 | R | Alíquota | ISS_RATE | `ZSD_BR_NFSE_ISS_RATE` | DEC 7,4 |
-| S | ISS Retido | ISS_WHT_FLAG | `ZSD_BR_NFSE_ISS_WHT_FLAG` | CHAR 1 (S/N) |
-| T | Prestação de Serviço fora de São Paulo | OUTSIDE_SP_FLAG | `ZSD_BR_NFSE_OUTSIDE_SP_FLAG` | CHAR 1 (S/N) |
+| S | ISS Retido | ISS_WHT_FLAG | `ZSD_BR_NFSE_ISS_WHT_FLAG` | CHAR 1 (Y/N) |
+| T | Prestação de Serviço fora de São Paulo | OUTSIDE_SP_FLAG | `ZSD_BR_NFSE_OUTSIDE_SP_FLAG` | CHAR 1 (Y/N) |
 | U | Código do Serviço Prestado na Nota Fiscal | SERVICE_CODE | `ZSD_BR_NFSE_SERVICE_CODE` | CHAR 10 |
 | V | Município da Prestação do Serviço | SERVICE_CITY_CODE | `ZSD_BR_NFSE_SERV_CITY_CODE` | NUMC 7 (IBGE) |
 | W | UF | SERVICE_REGION | `ZSD_BR_NFSE_SERVICE_REGION` | CHAR 3 |
@@ -397,9 +397,9 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | KUNNR | Codigo SAP | (valor) | (cliente) | Não | Sem entrada → usa o próprio Código SAP ✅ |
 | CFOP | UF do Tomador | SP | 5933AA | Sim | CFOP dentro do estado |
 | CFOP | UF do Tomador | * | 6933AA | Sim | CFOP fora do estado |
-| TAXTYP_ISS | ISS Retido | S | (tipo ISS retido) | Sim | Tipo de imposto ISS |
+| TAXTYP_ISS | ISS Retido | Y | (tipo ISS retido) | Sim | Tipo de imposto ISS |
 | TAXTYP_ISS | ISS Retido | N | (tipo ISS devido) | Sim | |
-| TAXLW3 | ISS Retido | S / N | (lei ISS) | Sim | Lei fiscal ISS |
+| TAXLW3 | ISS Retido | Y / N | (lei ISS) | Sim | Lei fiscal ISS |
 | CCLASSTRIB | Código do Serviço Prestado na Nota Fiscal | 1805 | (cClassTrib) | Não | Padrão se coluna AY vazia |
 
 ### 8.2 Parâmetros fixos (`FILE_COLUMN_NAME` vazio, `INPUT = '*'`)

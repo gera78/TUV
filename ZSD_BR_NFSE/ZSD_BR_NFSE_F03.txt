@@ -477,7 +477,7 @@ FORM build_csv_fields USING    us_alv    TYPE gty_alv
   PERFORM format_amount USING us_alv-iss_amt CHANGING lv_iss.
   ct_fields[ 31 ] = lv_iss.
   ct_fields[ 32 ] = '0,00'.
-  ct_fields[ 33 ] = us_alv-iss_wht_flag.
+  ct_fields[ 33 ] = COND #( WHEN us_alv-iss_wht_flag = gc_yes THEN gc_sheet_yes ELSE gc_no ).  " portal uses S/N
 
 * 34 - 47: service taker
   lv_digits = replace( val = us_alv-taker_tax_id regex = `\D` with = `` occ = 0 ).

@@ -49,8 +49,10 @@ CONSTANTS:
   gc_last_column  TYPE i        VALUE 54,    " A .. BB
   gc_rps_max_len  TYPE i        VALUE 6,     " J_1BNFDOC-NFNUM length
   gc_docsta_auth  TYPE char1    VALUE '1',   " J_1BNFE_ACTIVE-DOCSTA: authorized
-  gc_yes          TYPE char1    VALUE 'S',   " Yes/No flags as they come from the spreadsheet
+  gc_yes          TYPE char1    VALUE 'Y',   " domain ZSD_BR_NFSE_YES_NO
   gc_no           TYPE char1    VALUE 'N',
+  gc_sheet_yes    TYPE char1    VALUE 'S',   " "Sim" - Yes as typed in the spreadsheet and
+                                             " written to the city portal layout (CSV)
   gc_wildcard     TYPE char1    VALUE '*'.
 
 * Line status (domain ZSD_BR_NFSE_LINE_STATUS)

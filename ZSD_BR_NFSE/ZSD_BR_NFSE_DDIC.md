@@ -10,7 +10,7 @@ Objetos a criar no sistema **antes** de ativar os programas. Ordem de transporte
 |---|---|---|
 | ZSD_BR_NFSE_FILE_STATUS | CHAR 1 | S Success · P Partially processed · E Error |
 | ZSD_BR_NFSE_LINE_STATUS | CHAR 1 | (vazio) Not processed · S Success · E Error · V Validated (test run) |
-| ZSD_BR_NFSE_YES_NO | CHAR 1 | S Yes · N No |
+| ZSD_BR_NFSE_YES_NO | CHAR 1 | Y Yes · N No (a planilha traz S/N e é convertida na carga; o CSV de saída volta a usar S/N, como o portal da Prefeitura) |
 | ZSD_BR_NFSE_AMOUNT | CURR 15,2 | – |
 | ZSD_BR_NFSE_RATE | DEC 7,4 | – |
 
@@ -223,7 +223,7 @@ Manutenção (SE54): grupo de funções ZSD_BR_NFSE_PARM, tela única, grupo de 
 | 009 | Service description is empty |
 | 010 | CBS withheld &1 greater than CBS due &2 |
 | 011 | IBS withheld &1 greater than IBS due &2 |
-| 012 | Invalid ISS withheld indicator &1 (expected S or N) |
+| 012 | Invalid ISS withheld indicator &1 (expected S or N in the spreadsheet) |
 | 013 | ISS amount &1 differs from rate x service amount (&2) |
 | 014 | Tax group &1 not filled |
 | 015 | Service municipality not filled |
@@ -287,8 +287,8 @@ Manutenção (SE54): grupo de funções ZSD_BR_NFSE_PARM, tela única, grupo de 
 | SRV_DESCRIPTION | Código do Serviço Prestado na Nota Fiscal | 3115 | Assessoria ou consultoria de qualquer natureza, nao contida em outros itens desta lista. |
 | MATNR | Código do Serviço Prestado na Nota Fiscal | (código) | ⏳ material – consultor fiscal |
 | CFOP | UF do Tomador | SP / * | ⏳ CFOP – consultor fiscal |
-| TAXTYP_ISS | ISS Retido | S / N | ⏳ tipo de imposto |
-| TAXLW3 | ISS Retido | S / N | ⏳ lei fiscal ISS |
+| TAXTYP_ISS | ISS Retido | Y / N | ⏳ tipo de imposto |
+| TAXLW3 | ISS Retido | Y / N | ⏳ lei fiscal ISS |
 | TAXTYP_INSS, _IRRF, _CSLL (e _CBS, _IBS, _CBS_WHT, _IBS_WHT) | | * | ⏳ tipos de imposto |
 | TAXLW1, TAXLW2, TAXLW4, TAXLW5, ITMTYP, MATUSE, MATORG | | * | ⏳ consultor fiscal |
 | WERKS | | * | opcional: vazio = centro do local de negócio (T001W-J_1BBRANCH) |

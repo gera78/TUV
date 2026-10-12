@@ -548,7 +548,8 @@ ENDFORM.
 *   D (date)          - Excel serial number, dd/mm/yyyy or yyyy-mm-dd
 *   N / C / string    - trimmed text; "1805.0" style numbers -> "1805"
 * Field-specific normalizations: customer number (ALPHA), service code
-* without leading zeros, Yes/No flags and regions in upper case.
+* without leading zeros, regions in upper case, Yes/No flags from the
+* spreadsheet's S/N to the domain values Y/N.
 *----------------------------------------------------------------------*
 FORM convert_cell USING    uv_cell  TYPE string
                            uv_field TYPE fieldname
@@ -590,7 +591,14 @@ FORM convert_cell USING    uv_cell  TYPE string
           RETURN.
         WHEN 'SERVICE_CODE'.
           SHIFT lv_text LEFT DELETING LEADING '0'.
-        WHEN 'ISS_WHT_FLAG' OR 'OUTSIDE_SP_FLAG' OR 'SERVICE_REGION' OR 'TAKER_REGION'.
+        WHEN 'ISS_WHT_FLAG' OR 'OUTSIDE_SP_FLAG'.
+*         Spreadsheet uses S (Sim) / N (Não); stored in English Y / N.
+*         Any other value is kept so that validation 012 reports it.
+          lv_text = to_upper( lv_text ).
+          IF lv_text = gc_sheet_yes.
+            lv_text = gc_yes.
+          ENDIF.
+        WHEN 'SERVICE_REGION' OR 'TAKER_REGION'.
           lv_text = to_upper( lv_text ).
         WHEN 'TAKER_MUN_REG'.
           IF lv_text = '0'.
