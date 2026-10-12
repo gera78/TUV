@@ -1,0 +1,362 @@
+*---------------------------------------------------------------------*
+* Report    ZSD_BR_NFSE_PARM_LOAD                                     *
+*---------------------------------------------------------------------*
+* Date:                 12.10.2026                                    *
+* Developer:            Renato Santos                                 *
+* IT Responsible:       Renato Santos                                 *
+* Business Responsible: Juliana Reimberg                              *
+*---------------------------------------------------------------------*
+* Functional description                                              *
+* One-off load of the proposed initial content of the parameter      *
+* table ZSD_BR_NFSE_PARM for one company code (design document,       *
+* section 8). Every proposal is classified as:                        *
+*   - Defined: value known (control parameters, provider data of the *
+*     output file, service descriptions, CFOP proposal)               *
+*   - To be defined: value still depends on the tax consultant        *
+*     (tax types, tax laws, item type, material, ...). These are      *
+*     only loaded, with an EMPTY value, when "Include entries to be   *
+*     defined" is ticked - the upload programs treat an existing      *
+*     entry as maintained, so complete them in the maintenance dialog *
+*     before the first real upload.                                   *
+* Existing entries are kept unless "Overwrite existing values" is     *
+* ticked. "Test run" (default) only lists what would be done.         *
+* Entries are written directly to the table (no transport request):   *
+* run it in each client, or transport the entries afterwards from the *
+* maintenance dialog (SM30 - Table View > Transport).                 *
+*---------------------------------------------------------------------*
+* Authorization logic                                                 *
+* S_TABU_NAM (ACTVT 02, table ZSD_BR_NFSE_PARM) - same authorization  *
+* as the maintenance dialog of the table.                             *
+*---------------------------------------------------------------------*
+* Text symbols / selection texts                                      *
+*   B01 Load options                                                  *
+*   E01 Company code does not exist                                   *
+*   E02 No authorization to change table ZSD_BR_NFSE_PARM             *
+*   E03 Error writing ZSD_BR_NFSE_PARM - nothing saved                *
+*   S01 entries written to ZSD_BR_NFSE_PARM                           *
+*   P_BUKRS Company code       P_TBD   Include entries TBD            *
+*   P_OVERWR Overwrite values  P_TEST  Test run                       *
+*---------------------------------------------------------------------*
+* Change history                                                      *
+* 12.10.2026  Renato Santos                                           *
+* Initial version.                                                    *
+*---------------------------------------------------------------------*
+REPORT zsd_br_nfse_parm_load.
+
+TYPE-POOLS: icon.
+
+*---------------------------------------------------------------------*
+* Constants
+*---------------------------------------------------------------------*
+CONSTANTS:
+  gc_table      TYPE tabname VALUE 'ZSD_BR_NFSE_PARM',
+  gc_wildcard   TYPE char1   VALUE '*',
+* Excel column headers - must match the layout of the upload programs
+  gc_col_srv    TYPE zsd_br_nfse_file_column_name
+                VALUE 'Código do Serviço Prestado na Nota Fiscal',
+  gc_col_region TYPE zsd_br_nfse_file_column_name VALUE 'UF do Tomador',
+  gc_col_isswht TYPE zsd_br_nfse_file_column_name VALUE 'ISS Retido'.
+
+*---------------------------------------------------------------------*
+* Types
+*---------------------------------------------------------------------*
+TYPES:
+  BEGIN OF gty_prop,
+    field_name       TYPE zsd_br_nfse_parm-field_name,
+    file_column_name TYPE zsd_br_nfse_parm-file_column_name,
+    z_input          TYPE zsd_br_nfse_parm-z_input,
+    z_output         TYPE zsd_br_nfse_parm-z_output,
+    tbd              TYPE abap_bool,
+    note             TYPE char80,
+  END OF gty_prop,
+  gty_prop_tab TYPE STANDARD TABLE OF gty_prop WITH EMPTY KEY,
+
+  BEGIN OF gty_out,
+    icon             TYPE icon_d,
+    field_name       TYPE zsd_br_nfse_parm-field_name,
+    file_column_name TYPE zsd_br_nfse_parm-file_column_name,
+    z_input          TYPE zsd_br_nfse_parm-z_input,
+    z_output         TYPE zsd_br_nfse_parm-z_output,
+    old_output       TYPE zsd_br_nfse_parm-z_output,
+    action           TYPE char30,
+    note             TYPE char80,
+  END OF gty_out,
+  gty_out_tab TYPE STANDARD TABLE OF gty_out WITH EMPTY KEY.
+
+*---------------------------------------------------------------------*
+* Global data
+*---------------------------------------------------------------------*
+DATA: gt_prop TYPE gty_prop_tab,
+      gt_out  TYPE gty_out_tab.
+
+*---------------------------------------------------------------------*
+* Selection screen
+*---------------------------------------------------------------------*
+SELECTION-SCREEN BEGIN OF BLOCK b01 WITH FRAME TITLE TEXT-b01.
+  PARAMETERS:
+    p_bukrs  TYPE bukrs OBLIGATORY,
+    p_tbd    AS CHECKBOX,
+    p_overwr AS CHECKBOX,
+    p_test   AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN END OF BLOCK b01.
+
+*---------------------------------------------------------------------*
+AT SELECTION-SCREEN.
+*---------------------------------------------------------------------*
+  IF sy-ucomm = 'ONLI'.
+    PERFORM check_input.
+  ENDIF.
+
+*---------------------------------------------------------------------*
+START-OF-SELECTION.
+*---------------------------------------------------------------------*
+  PERFORM build_proposals.
+  PERFORM process.
+  PERFORM display.
+
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_INPUT
+*&---------------------------------------------------------------------*
+FORM check_input.
+
+  SELECT SINGLE bukrs FROM t001 WHERE bukrs = @p_bukrs INTO @DATA(lv_bukrs).
+  IF sy-subrc <> 0.
+    MESSAGE TEXT-e01 TYPE 'E'.                   " Company code does not exist
+  ENDIF.
+
+  AUTHORITY-CHECK OBJECT 'S_TABU_NAM'
+    ID 'ACTVT'     FIELD '02'
+    ID 'TABLE'     FIELD gc_table.
+  IF sy-subrc <> 0.
+    MESSAGE TEXT-e02 TYPE 'E'.                   " No authorization to change the table
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  ADD
+*&---------------------------------------------------------------------*
+FORM add USING uv_field  TYPE any
+               uv_column TYPE any
+               uv_input  TYPE any
+               uv_output TYPE any
+               uv_tbd    TYPE abap_bool
+               uv_note   TYPE any.
+
+  APPEND VALUE #( field_name       = uv_field
+                  file_column_name = uv_column
+                  z_input          = uv_input
+                  z_output         = uv_output
+                  tbd              = uv_tbd
+                  note             = uv_note ) TO gt_prop.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  BUILD_PROPOSALS
+*&---------------------------------------------------------------------*
+* Design document section 8. Service codes are stored without leading
+* zeros, the ISS withheld flag as Y / N (spreadsheet S is converted).
+*----------------------------------------------------------------------*
+FORM build_proposals.
+
+  DATA: lt_codes TYPE STANDARD TABLE OF zsd_br_nfse_parm-z_input WITH EMPTY KEY,
+        lv_note  TYPE char80.
+
+*--- 8.2 Control parameters (no file column, input "*")
+  PERFORM add USING 'SHEET_NAME'          '' gc_wildcard 'Emissão NF - Ductor' abap_false 'Worksheet read by the upload'.
+  PERFORM add USING 'MAX_LINES'           '' gc_wildcard '500'   abap_false 'Max. data lines per file (msg 033)'.
+  PERFORM add USING 'ISS_TOLERANCE'       '' gc_wildcard '0.01'  abap_false 'ISS check tolerance (msg 013)'.
+  PERFORM add USING 'SEND_CBS_IBS'        '' gc_wildcard ''      abap_false 'Blank = CBS/IBS not sent to the NF yet'.
+  PERFORM add USING 'TAXGRP_REQ_01'       '' gc_wildcard 'X'     abap_false 'Tax group 01 (CBS/IBS due) required'.
+  PERFORM add USING 'TAXGRP_REQ_02'       '' gc_wildcard ''      abap_false 'Tax group 02 (INSS) optional'.
+  PERFORM add USING 'TAXGRP_REQ_03'       '' gc_wildcard ''      abap_false 'Tax group 03 (withholdings) optional'.
+  PERFORM add USING 'LOG_RETENTION_YEARS' '' gc_wildcard '5'     abap_false 'Purge default (LGPD) - validate with DPO'.
+  PERFORM add USING 'MATORG'              '' gc_wildcard '0'     abap_false 'Material origin: national'.
+
+*--- 8.2 NF Writer item parameters - tax consultant
+  PERFORM add USING 'ITMTYP'         '' gc_wildcard '' abap_true 'NF item type'.
+  PERFORM add USING 'MATUSE'         '' gc_wildcard '' abap_true 'Material usage'.
+  PERFORM add USING 'TAXLW1'         '' gc_wildcard '' abap_true 'ICMS tax law (not taxed)'.
+  PERFORM add USING 'TAXLW2'         '' gc_wildcard '' abap_true 'IPI tax law (not taxed)'.
+  PERFORM add USING 'TAXLW4'         '' gc_wildcard '' abap_true 'COFINS tax law'.
+  PERFORM add USING 'TAXLW5'         '' gc_wildcard '' abap_true 'PIS tax law'.
+  PERFORM add USING 'TAXTYP_CBS'     '' gc_wildcard '' abap_true 'CBS tax type (group 01)'.
+  PERFORM add USING 'TAXTYP_IBS'     '' gc_wildcard '' abap_true 'IBS tax type (group 01)'.
+  PERFORM add USING 'TAXTYP_INSS'    '' gc_wildcard '' abap_true 'INSS withheld tax type (group 02)'.
+  PERFORM add USING 'TAXTYP_IRRF'    '' gc_wildcard '' abap_true 'IRRF withheld tax type (group 03)'.
+  PERFORM add USING 'TAXTYP_CSLL'    '' gc_wildcard '' abap_true 'CSLL withheld tax type (group 03)'.
+  PERFORM add USING 'TAXTYP_CBS_WHT' '' gc_wildcard '' abap_true 'CBS withheld tax type (group 03)'.
+  PERFORM add USING 'TAXTYP_IBS_WHT' '' gc_wildcard '' abap_true 'IBS withheld tax type (group 03)'.
+* WERKS is not proposed: when missing, the plant is derived from the
+* business place (J_1BT001WV).
+
+*--- 8.1 Mappings by spreadsheet value
+  PERFORM add USING 'CFOP' gc_col_region 'SP'        '5933AA' abap_false 'CFOP inside the state - confirm'.
+  PERFORM add USING 'CFOP' gc_col_region gc_wildcard '6933AA' abap_false 'CFOP outside the state - confirm'.
+
+  PERFORM add USING 'TAXTYP_ISS' gc_col_isswht 'Y' '' abap_true 'ISS tax type - ISS withheld'.
+  PERFORM add USING 'TAXTYP_ISS' gc_col_isswht 'N' '' abap_true 'ISS tax type - ISS due'.
+  PERFORM add USING 'TAXLW3'     gc_col_isswht 'Y' '' abap_true 'ISS tax law - ISS withheld'.
+  PERFORM add USING 'TAXLW3'     gc_col_isswht 'N' '' abap_true 'ISS tax law - ISS due'.
+
+  lt_codes = VALUE #( ( '1902' ) ( '1805' ) ( '1694' ) ( '3115' ) ).
+  LOOP AT lt_codes INTO DATA(lv_code).
+    lv_note = |Material for service code { lv_code }|.
+    PERFORM add USING 'MATNR'      gc_col_srv lv_code '' abap_true lv_note.
+    lv_note = |cClassTrib default for service code { lv_code }|.
+    PERFORM add USING 'CCLASSTRIB' gc_col_srv lv_code '' abap_true lv_note.
+  ENDLOOP.
+
+*--- Output file (CSV): service provider, as in the PMSP file
+  PERFORM add USING 'RPS_SERIES'         '' gc_wildcard '900'                       abap_false 'RPS series (column 6)'.
+  PERFORM add USING 'PRV_MUN_REG'        '' gc_wildcard '8.169.973-5'               abap_false 'Municipal registration (column 9)'.
+  PERFORM add USING 'PRV_TAX_ID'         '' gc_wildcard '47.096.581/0001-70'        abap_false 'CNPJ (column 11)'.
+  PERFORM add USING 'PRV_NAME'           '' gc_wildcard 'TUV RHEINLAND DUCTOR LTDA' abap_false 'Company name (column 12)'.
+  PERFORM add USING 'PRV_STREET_TYPE'    '' gc_wildcard 'AV'                        abap_false 'Street type (column 13)'.
+  PERFORM add USING 'PRV_STREET'         '' gc_wildcard 'FRANCISCO MATARAZZO'       abap_false 'Street (column 14)'.
+  PERFORM add USING 'PRV_HOUSE_NUM'      '' gc_wildcard '1400'                      abap_false 'Number (column 15)'.
+  PERFORM add USING 'PRV_ADDR_COMPL'     '' gc_wildcard 'ANDAR 6'                   abap_false 'Complement (column 16)'.
+  PERFORM add USING 'PRV_DISTRICT'       '' gc_wildcard 'AGUA BRANCA'               abap_false 'District (column 17)'.
+  PERFORM add USING 'PRV_CITY'           '' gc_wildcard ''                          abap_false 'City (column 18) - blank as in PMSP file'.
+  PERFORM add USING 'PRV_REGION'         '' gc_wildcard ''                          abap_false 'State (column 19) - blank as in PMSP file'.
+  PERFORM add USING 'PRV_POSTAL_CODE'    '' gc_wildcard '05001-903'                 abap_false 'Postal code (column 20)'.
+  PERFORM add USING 'PRV_EMAIL'          '' gc_wildcard 'fiscal@br.tuv.com'         abap_false 'E-mail (column 21)'.
+  PERFORM add USING 'CSV_REMOVE_ACCENTS' '' gc_wildcard 'X'                         abap_false 'Remove accents (PMSP exports without)'.
+
+*--- Output file: city text of the service code (prefix of column 73)
+  PERFORM add USING 'SRV_DESCRIPTION' gc_col_srv '1902'
+    'Pericias, laudos, exames tecnicos e analises tecnicas, inclusive institutos psicotecnicos.'
+    abap_false 'Service text 1902 (PMSP)'.
+  PERFORM add USING 'SRV_DESCRIPTION' gc_col_srv '1805'
+    'Acompanhamento e fiscalizacao da execucao de obras de engenharia, arquitetura e urbanismo.'
+    abap_false 'Service text 1805 (PMSP)'.
+  PERFORM add USING 'SRV_DESCRIPTION' gc_col_srv '1694'
+    'Estudos, planos e projetos tecnicos de engenharia, arquitetura e urbanismo.'
+    abap_false 'Service text 1694 (PMSP)'.
+  PERFORM add USING 'SRV_DESCRIPTION' gc_col_srv '3115'
+    'Assessoria ou consultoria de qualquer natureza, nao contida em outros itens desta lista.'
+    abap_false 'Service text 3115 (PMSP)'.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  PROCESS
+*&---------------------------------------------------------------------*
+FORM process.
+
+  DATA: lt_existing TYPE SORTED TABLE OF zsd_br_nfse_parm
+                         WITH UNIQUE KEY bukrs field_name file_column_name z_input,
+        lt_write    TYPE STANDARD TABLE OF zsd_br_nfse_parm WITH EMPTY KEY,
+        ls_out      TYPE gty_out,
+        lv_count    TYPE char10.
+
+  SELECT * FROM zsd_br_nfse_parm
+    WHERE bukrs = @p_bukrs
+    INTO TABLE @lt_existing.
+
+  LOOP AT gt_prop INTO DATA(ls_prop).
+    CLEAR ls_out.
+    ls_out-field_name       = ls_prop-field_name.
+    ls_out-file_column_name = ls_prop-file_column_name.
+    ls_out-z_input          = ls_prop-z_input.
+    ls_out-z_output         = ls_prop-z_output.
+    ls_out-note             = ls_prop-note.
+
+    READ TABLE lt_existing INTO DATA(ls_existing)
+      WITH TABLE KEY bukrs            = p_bukrs
+                     field_name       = ls_prop-field_name
+                     file_column_name = ls_prop-file_column_name
+                     z_input          = ls_prop-z_input.
+    DATA(lv_exists) = xsdbool( sy-subrc = 0 ).
+    IF lv_exists = abap_true.
+      ls_out-old_output = ls_existing-z_output.
+    ENDIF.
+
+    IF ls_prop-tbd = abap_true AND p_tbd = abap_false.
+      ls_out-icon   = icon_led_yellow.
+      ls_out-action = 'Skipped - to be defined'.
+    ELSEIF ls_prop-tbd = abap_true AND lv_exists = abap_true.
+*     Never blank out a value someone already maintained
+      ls_out-icon   = icon_led_inactive.
+      ls_out-action = 'Kept - already exists'.
+    ELSEIF lv_exists = abap_true AND
+           ( p_overwr = abap_false OR ls_existing-z_output = ls_prop-z_output ).
+      ls_out-icon   = icon_led_inactive.
+      ls_out-action = 'Kept - already exists'.
+    ELSE.
+      ls_out-icon   = COND #( WHEN ls_prop-tbd = abap_true THEN icon_led_yellow ELSE icon_led_green ).
+      ls_out-action = COND #( WHEN lv_exists = abap_true      THEN 'Updated'
+                              WHEN ls_prop-tbd = abap_true    THEN 'Created empty - complete it'
+                              ELSE 'Created' ).
+      APPEND VALUE #( bukrs            = p_bukrs
+                      field_name       = ls_prop-field_name
+                      file_column_name = ls_prop-file_column_name
+                      z_input          = ls_prop-z_input
+                      z_output         = ls_prop-z_output ) TO lt_write.
+    ENDIF.
+    IF p_test = abap_true AND ls_out-action(4) <> 'Kept' AND ls_out-action(4) <> 'Skip'.
+      ls_out-action = |(Test) { ls_out-action }|.
+    ENDIF.
+    APPEND ls_out TO gt_out.
+  ENDLOOP.
+
+  IF p_test = abap_true OR lt_write IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  MODIFY zsd_br_nfse_parm FROM TABLE @lt_write.
+  IF sy-subrc = 0.
+    COMMIT WORK.
+    lv_count = lines( lt_write ).
+    CONDENSE lv_count.
+    MESSAGE |{ lv_count } { TEXT-s01 }| TYPE 'S'.          " entries written
+  ELSE.
+    ROLLBACK WORK.
+    MESSAGE TEXT-e03 TYPE 'S' DISPLAY LIKE 'E'.             " nothing saved
+    LOOP AT gt_out ASSIGNING FIELD-SYMBOL(<ls_out>) WHERE icon = icon_led_green.
+      <ls_out>-icon   = icon_led_red.
+      <ls_out>-action = 'Not saved - database error'.
+    ENDLOOP.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  DISPLAY
+*&---------------------------------------------------------------------*
+FORM display.
+
+  DATA lo_alv TYPE REF TO cl_salv_table.
+
+  TRY.
+      cl_salv_table=>factory( IMPORTING r_salv_table = lo_alv
+                              CHANGING  t_table      = gt_out ).
+    CATCH cx_salv_msg.
+      RETURN.
+  ENDTRY.
+
+  lo_alv->get_functions( )->set_all( abap_true ).
+  lo_alv->get_columns( )->set_optimize( abap_true ).
+  lo_alv->get_display_settings( )->set_list_header(
+    COND #( WHEN p_test = abap_true THEN |{ gc_table } { p_bukrs } - test run|
+            ELSE |{ gc_table } { p_bukrs } - update run| ) ).
+
+  TRY.
+      DATA(lo_columns) = lo_alv->get_columns( ).
+      lo_columns->get_column( 'ICON' )->set_short_text( 'Status' ).
+      lo_columns->get_column( 'OLD_OUTPUT' )->set_short_text( 'Old value' ).
+      lo_columns->get_column( 'OLD_OUTPUT' )->set_medium_text( 'Value before' ).
+      lo_columns->get_column( 'OLD_OUTPUT' )->set_long_text( 'Value before' ).
+      lo_columns->get_column( 'ACTION' )->set_short_text( 'Action' ).
+      lo_columns->get_column( 'ACTION' )->set_medium_text( 'Action' ).
+      lo_columns->get_column( 'ACTION' )->set_long_text( 'Action' ).
+      lo_columns->get_column( 'NOTE' )->set_short_text( 'Note' ).
+      lo_columns->get_column( 'NOTE' )->set_medium_text( 'Note' ).
+      lo_columns->get_column( 'NOTE' )->set_long_text( 'Note' ).
+    CATCH cx_salv_not_found.
+  ENDTRY.
+
+  lo_alv->display( ).
+
+ENDFORM.
