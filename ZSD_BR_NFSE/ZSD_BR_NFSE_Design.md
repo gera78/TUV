@@ -361,6 +361,7 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | Regra | Definição |
 |---|---|
 | Método | `GUI_UPLOAD` (binário) → XSTRING → `CL_FDT_XL_SPREADSHEET` |
+| Alternativa: colar do Excel (`P_CLIP`) | Para Citrix sem acesso aos discos do PC: o usuário seleciona a aba inteira a partir de A1 (Ctrl+A) e copia (Ctrl+C); o programa lê a área de transferência (`CLIPBOARD_IMPORT`), separa células por TAB e linhas por quebra (células entre aspas aceitas) e monta a mesma tabela A..BB – validação de layout e conversões iguais. Nome do arquivo gravado: `CLIPBOARD`. Valores vêm como exibidos (R$, %, dd/mm/aaaa, `-` = zero) e são convertidos; Excel em pt-BR. Linhas ocultas por filtro não são copiadas e a numeração das linhas muda. Área de transferência vazia → msg 047 |
 | Aba | Parâmetro `SHEET_NAME` (padrão "Emissão NF - Ductor"); aba inexistente → msg 018 |
 | Linha 1 | Grupos (Destinatário / Imóvel-Obra / Tributário) – ignorada |
 | Linha 2 | Cabeçalho – validação de layout (msg 001): posição + texto de A até BB, **comparado sem espaços nas pontas, sem diferenciar maiúsculas/minúsculas e sem acentos** (ex.: "Nacional " = "NACIONAL") ✅ |
@@ -457,6 +458,7 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | 031 | Local de negócio não pertence à empresa (tela – antes do upload) |
 | 032 | NF type não é de saída ou gera contabilização (tela – antes do upload) |
 | 018 | Arquivo não pôde ser lido ou aba `SHEET_NAME` não existe |
+| 047 | Opção colar do Excel: área de transferência vazia |
 | 001 | Cabeçalho da linha 2 difere do padrão (posição/texto); informa a 1ª coluna divergente |
 | 033 | Arquivo excede `MAX_LINES` linhas |
 | 030 | Processamento bloqueado por outro usuário (BUKRS + BRANCH) – nenhuma NF criada; linhas permanecem com status ' ' para reprocessamento |
@@ -816,6 +818,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | 038 | &1 lines exported to &2 | ✅ |
 | 039 | RPS &1 is invalid (numeric, max. 6 digits) | ✅ |
 | 040 | CBS/IBS not sent to the NF (parameter SEND_CBS_IBS is off) | ✅ (I) |
+| 047 | Clipboard is empty - copy the worksheet in Excel from cell A1 | ✅ |
 
 ---
 

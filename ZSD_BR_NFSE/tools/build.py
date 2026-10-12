@@ -3,7 +3,7 @@ def q(s): return "'"+s.replace("'","''")+"'"
 md=open(__import__('os').path.join(__import__('os').path.dirname(__file__),'..','ZSD_BR_NFSE_DDIC.md'),encoding='utf-8').read()
 sec=md[md.index('## 6. Classe de mensagem'):md.index('## 7.')]
 msgs=re.findall(r'^\| (0\d\d) \| (.+?) \|$',sec,re.M)
-assert len(msgs)==46
+assert len(msgs)==47
 L=[]
 L.append("  gt_domain = VALUE #(")
 for n,t,l,d,lc,txt,fv in spec.DOMAINS:

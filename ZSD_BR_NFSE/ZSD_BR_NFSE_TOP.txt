@@ -59,6 +59,7 @@ CONSTANTS:
   gc_text_width   TYPE i        VALUE 72,
   gc_header_row   TYPE i        VALUE 2,     " Excel row holding the column names
   gc_first_row    TYPE i        VALUE 3,     " first Excel row holding data
+  gc_clip_file    TYPE zsd_br_nfse_file_name VALUE 'CLIPBOARD', " file name when pasted
   gc_last_column  TYPE i        VALUE 54,    " A .. BB
   gc_rps_max_len  TYPE i        VALUE 6,     " J_1BNFDOC-NFNUM length
   gc_docsta_auth  TYPE char1    VALUE '1',   " J_1BNFE_ACTIVE-DOCSTA: authorized
