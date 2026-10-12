@@ -570,9 +570,13 @@ FORM format_amount USING    uv_amount TYPE any
         lv_dec  TYPE string,
         lv_out  TYPE string,
         lv_len  TYPE i,
-        lv_neg  TYPE abap_bool.
+        lv_neg  TYPE abap_bool,
+        lv_amt  TYPE p LENGTH 16 DECIMALS 2.
 
-  cv_text = |{ uv_amount NUMBER = RAW DECIMALS = 2 }|.
+* DECIMALS cannot be used on a generic (TYPE any) operand, so the value
+* is first moved to a typed packed field with 2 decimals.
+  lv_amt  = uv_amount.
+  cv_text = |{ lv_amt NUMBER = RAW }|.
   IF cv_text CS '-'.
     lv_neg = abap_true.
     REPLACE ALL OCCURRENCES OF '-' IN cv_text WITH ''.

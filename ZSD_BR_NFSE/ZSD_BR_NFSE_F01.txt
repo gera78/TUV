@@ -517,8 +517,11 @@ FORM map_rows_to_data USING uo_rows TYPE REF TO data.
     DATA(lv_row) = sy-tabix.
 
     ASSIGN COMPONENT 'B' OF STRUCTURE <ls_row> TO <lv_cell>.
-    IF sy-subrc <> 0 OR condense( CONV string( <lv_cell> ) ) IS INITIAL
-       OR condense( CONV string( <lv_cell> ) ) = '0'.
+    IF sy-subrc <> 0.
+      CONTINUE.
+    ENDIF.
+    lv_cell = condense( CONV string( <lv_cell> ) ).
+    IF lv_cell IS INITIAL OR lv_cell = '0'.
       CONTINUE.
     ENDIF.
 
