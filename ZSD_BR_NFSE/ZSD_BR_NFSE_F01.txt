@@ -89,7 +89,7 @@ FORM check_selection_screen.
   CASE abap_true.
     WHEN p_rupl.
       IF p_bukrs IS INITIAL OR p_branch IS INITIAL OR p_nftype IS INITIAL
-         OR ( p_file IS INITIAL AND p_clip = abap_false ) OR p_docdat IS INITIAL.
+         OR p_file IS INITIAL OR p_docdat IS INITIAL.
         MESSAGE e055(00).                   " Fill in all required entry fields
       ENDIF.
       PERFORM check_authority USING p_bukrs '01'.
@@ -216,23 +216,14 @@ FORM process_upload.
   gs_file-exec_user = sy-uname.
   gs_file-exec_date = sy-datum.
   gs_file-exec_time = sy-uzeit.
-  IF p_clip = abap_true.
-    gs_file-file_name = gc_clip_file.
-  ELSE.
-    PERFORM split_path USING p_file CHANGING gs_file-file_path gs_file-file_name.
-  ENDIF.
+  PERFORM split_path USING p_file CHANGING gs_file-file_path gs_file-file_name.
 
   PERFORM load_params USING gs_file-bukrs.
   PERFORM build_layout.
 
-* 1. Read the workbook (or the pasted worksheet); any problem with the
-*    file itself ends here
-  IF p_clip = abap_true.
-    PERFORM read_clipboard CHANGING lo_rows lv_ok lv_msgno lv_v1 lv_v2.
-  ELSE.
-    PERFORM read_excel USING p_file
-                       CHANGING lo_rows lv_ok lv_msgno lv_v1 lv_v2.
-  ENDIF.
+* 1. Read the workbook; any problem with the file itself ends here
+  PERFORM read_excel USING p_file
+                     CHANGING lo_rows lv_ok lv_msgno lv_v1 lv_v2.
   IF lv_ok = abap_true.
     PERFORM check_layout USING lo_rows CHANGING lv_ok lv_msgno lv_v1 lv_v2.
   ENDIF.
@@ -457,140 +448,6 @@ FORM read_excel USING    uv_file  TYPE rlgrap-filename
 ENDFORM.
 
 *&---------------------------------------------------------------------*
-*&      Form  READ_CLIPBOARD
-*&---------------------------------------------------------------------*
-* Alternative to READ_EXCEL when the PC drives cannot be reached (e.g.
-* Citrix): the user selects the worksheet in Excel from cell A1
-* (Ctrl+A) and copies it (Ctrl+C). Excel puts it on the clipboard as
-* text - cells separated by TAB, rows by line breaks, a cell holding a
-* line break, TAB or quote enclosed in quotes ("" = one quote).
-* Returns the same structure as READ_EXCEL (components A, B, ... as
-* strings, table index = Excel row), so layout check and conversion
-* stay the same. Values come as displayed (R$, %, dd/mm/yyyy) - see
-* TEXT_TO_NUMBER / TEXT_TO_DATE.
-* 047 - clipboard empty.
-*----------------------------------------------------------------------*
-FORM read_clipboard CHANGING co_rows  TYPE REF TO data
-                             cv_ok    TYPE abap_bool
-                             cv_msgno TYPE symsgno
-                             cv_v1    TYPE symsgv
-                             cv_v2    TYPE symsgv.
-
-  FIELD-SYMBOLS: <lt_rows> TYPE STANDARD TABLE,
-                 <ls_row>  TYPE any.
-  DATA: lt_clip    TYPE STANDARD TABLE OF string WITH EMPTY KEY,
-        lt_comp    TYPE cl_abap_structdescr=>component_table,
-        lo_table   TYPE REF TO cl_abap_tabledescr,
-        lv_all     TYPE string,
-        lv_char    TYPE string,
-        lv_next    TYPE string,
-        lv_cell    TYPE string,
-        lv_len     TYPE i,
-        lv_pos     TYPE i,
-        lv_col     TYPE i VALUE 1,
-        lv_quoted  TYPE abap_bool,
-        lv_started TYPE abap_bool.
-
-  cv_ok    = abap_false.
-  cv_msgno = '047'.
-  CLEAR: cv_v1, cv_v2.
-
-  cl_gui_frontend_services=>clipboard_import(
-    IMPORTING
-      data   = lt_clip
-    EXCEPTIONS
-      OTHERS = 1 ).
-  IF sy-subrc <> 0 OR lt_clip IS INITIAL.
-    RETURN.
-  ENDIF.
-
-* Line breaks inside quoted cells may have split the import into more
-* lines - join everything back and parse it as one text
-  lv_all = concat_lines_of( table = lt_clip sep = cl_abap_char_utilities=>newline ).
-  REPLACE ALL OCCURRENCES OF cl_abap_char_utilities=>cr_lf(1) IN lv_all WITH ``.
-  lv_cell = condense( lv_all ).
-  IF lv_cell IS INITIAL.
-    RETURN.
-  ENDIF.
-  CLEAR lv_cell.
-
-* Result table: one string component per layout column (A .. BB)
-  LOOP AT gt_layout INTO DATA(ls_layout).
-    APPEND VALUE #( name = ls_layout-column
-                    type = cl_abap_elemdescr=>get_string( ) ) TO lt_comp.
-  ENDLOOP.
-  lo_table = cl_abap_tabledescr=>create( cl_abap_structdescr=>create( lt_comp ) ).
-  CREATE DATA co_rows TYPE HANDLE lo_table.
-  ASSIGN co_rows->* TO <lt_rows>.
-  APPEND INITIAL LINE TO <lt_rows> ASSIGNING <ls_row>.
-
-  lv_len = strlen( lv_all ).
-  WHILE lv_pos < lv_len.
-    lv_char = substring( val = lv_all off = lv_pos len = 1 ).
-    lv_pos  = lv_pos + 1.
-
-    IF lv_quoted = abap_true.
-      IF lv_char = '"'.
-        lv_next = COND #( WHEN lv_pos < lv_len THEN substring( val = lv_all off = lv_pos len = 1 ) ).
-        IF lv_next = '"'.
-          lv_cell = lv_cell && lv_char.            " "" = one quote
-          lv_pos  = lv_pos + 1.
-        ELSE.
-          lv_quoted = abap_false.
-        ENDIF.
-      ELSE.
-        lv_cell = lv_cell && lv_char.
-      ENDIF.
-      CONTINUE.
-    ENDIF.
-
-    CASE lv_char.
-      WHEN '"'.
-        IF lv_started = abap_false.
-          lv_quoted = abap_true.                   " quote opens the cell
-        ELSE.
-          lv_cell = lv_cell && lv_char.
-        ENDIF.
-        lv_started = abap_true.
-      WHEN cl_abap_char_utilities=>horizontal_tab.
-        PERFORM put_cell USING lv_col lv_cell CHANGING <ls_row>.
-        lv_col = lv_col + 1.
-        CLEAR: lv_cell, lv_started.
-      WHEN cl_abap_char_utilities=>newline.
-        PERFORM put_cell USING lv_col lv_cell CHANGING <ls_row>.
-        APPEND INITIAL LINE TO <lt_rows> ASSIGNING <ls_row>.
-        lv_col = 1.
-        CLEAR: lv_cell, lv_started.
-      WHEN OTHERS.
-        lv_cell    = lv_cell && lv_char.
-        lv_started = abap_true.
-    ENDCASE.
-  ENDWHILE.
-  PERFORM put_cell USING lv_col lv_cell CHANGING <ls_row>.
-
-  cv_ok = abap_true.
-  CLEAR cv_msgno.
-
-ENDFORM.
-
-*&---------------------------------------------------------------------*
-*&      Form  PUT_CELL
-*&---------------------------------------------------------------------*
-* Column n of the pasted row -> n-th component (A, B, ...). Columns
-* beyond the layout (after BB) are ignored.
-*----------------------------------------------------------------------*
-FORM put_cell USING    uv_col  TYPE i
-                       uv_text TYPE string
-              CHANGING cs_row  TYPE any.
-
-  ASSIGN COMPONENT uv_col OF STRUCTURE cs_row TO FIELD-SYMBOL(<lv_cell>).
-  IF sy-subrc = 0.
-    <lv_cell> = uv_text.
-  ENDIF.
-
-ENDFORM.
-
-*&---------------------------------------------------------------------*
 *&      Form  CHECK_LAYOUT
 *&---------------------------------------------------------------------*
 * 001 - row 2 must hold the expected header in every column A .. BB.
@@ -765,48 +622,23 @@ ENDFORM.
 *&      Form  TEXT_TO_NUMBER
 *&---------------------------------------------------------------------*
 * Accepts 2000 / 27.48978 / 1.5E-2 (Excel) and 2.000,00 (typed text).
-* Pasted cells come as Excel displays them, so also:
-*   R$ 1.234,56 (currency), - or R$ - (accounting zero),
-*   (1.234,56) (negative), 5,00% (percent -> 0.05),
-*   1.234 (thousands separator only - pasted data only).
 *----------------------------------------------------------------------*
 FORM text_to_number USING    uv_text TYPE string
                     CHANGING cv_num  TYPE decfloat34.
 
-  DATA: lv_text    TYPE string,
-        lv_percent TYPE abap_bool,
-        lv_negate  TYPE abap_bool.
+  DATA lv_text TYPE string.
 
-  CLEAR cv_num.
   lv_text = uv_text.
-  CONDENSE lv_text NO-GAPS.
-  lv_percent = xsdbool( lv_text CS '%' ).
-  lv_negate  = xsdbool( lv_text CP '(*)' ).
-* Keep digits, separators, sign and exponent only (drops R$, %, ...)
-  lv_text = replace( val = lv_text regex = `[^0-9,.+\-Ee]` with = `` occ = 0 ).
-  IF lv_text IS INITIAL OR lv_text = '-'.
-    RETURN.
-  ENDIF.
-
   IF lv_text CS ','.
     REPLACE ALL OCCURRENCES OF '.' IN lv_text WITH ''.
     REPLACE ALL OCCURRENCES OF ',' IN lv_text WITH '.'.
-  ELSEIF p_clip = abap_true AND matches( val = lv_text regex = `^-?\d{1,3}(\.\d{3})+$` ).
-    REPLACE ALL OCCURRENCES OF '.' IN lv_text WITH ''.
   ENDIF.
+  CONDENSE lv_text NO-GAPS.
   TRY.
       cv_num = lv_text.
     CATCH cx_sy_conversion_error.
       CLEAR cv_num.
-      RETURN.
   ENDTRY.
-
-  IF lv_percent = abap_true.
-    cv_num = cv_num / 100.
-  ENDIF.
-  IF lv_negate = abap_true.
-    cv_num = - abs( cv_num ).
-  ENDIF.
 
 ENDFORM.
 
@@ -832,15 +664,11 @@ FORM text_to_date USING    uv_text TYPE string
     lv_days = trunc( lv_num ).
     cv_date = '18991230'.
     cv_date = cv_date + lv_days.
-  ELSEIF matches( val = uv_text regex = `^\d{1,2}[/.]\d{1,2}[/.]\d{2}(\d{2})?(\s.*)?$` ).
-*   dd/mm/yyyy, also d/m/yyyy and dd/mm/yy as Excel may display them
-    SPLIT uv_text AT space INTO DATA(lv_day_part) DATA(lv_time_part) ##NEEDED.
-    TRANSLATE lv_day_part USING './'.
-    SPLIT lv_day_part AT '/' INTO lv_d lv_m lv_y.
-    IF strlen( lv_y ) = 2.
-      lv_y = |20{ lv_y }|.
-    ENDIF.
-    cv_date = |{ lv_y }{ lv_m ALIGN = RIGHT PAD = '0' WIDTH = 2 }{ lv_d ALIGN = RIGHT PAD = '0' WIDTH = 2 }|.
+  ELSEIF matches( val = uv_text regex = `^\d{2}[/.]\d{2}[/.]\d{4}.*` ).
+    lv_d = substring( val = uv_text off = 0 len = 2 ).
+    lv_m = substring( val = uv_text off = 3 len = 2 ).
+    lv_y = substring( val = uv_text off = 6 len = 4 ).
+    cv_date = |{ lv_y }{ lv_m }{ lv_d }|.
   ELSEIF matches( val = uv_text regex = `^\d{4}-\d{2}-\d{2}.*` ).
     cv_date = |{ substring( val = uv_text off = 0 len = 4 ) }| &&
               |{ substring( val = uv_text off = 5 len = 2 ) }| &&

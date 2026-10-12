@@ -181,7 +181,7 @@ Manutenção (SE54): grupo de funções ZSD_BR_NFSE_PARM, tela única, grupo de 
 
 ## 5. Textos dos programas
 
-**Textos de seleção** (os dois programas): P_RUPL Process upload and create NF Writer · P_RLOG Display execution log · P_REXP Generate output file (CSV) · P_RPARM Maintain parameters · P_RPURG Purge old logs · P_BUKRS Company Code · P_BRANCH Business Place · P_NFTYPE NF Type · P_DOCDAT Issue Date · P_FILE Excel File · P_CLIP Paste from Excel · P_TEST Validate only (no NF creation) · P_LERR Lines with errors only · P_XSITU Taxation type (I = inside SP, O = outside) · P_XNEW Not yet exported only · P_PBUKRS Company Code · P_PDATE Delete files executed before · P_PTEST Test run (count only) · S_L*/S_X*: usar "Dictionary reference".
+**Textos de seleção** (os dois programas): P_RUPL Process upload and create NF Writer · P_RLOG Display execution log · P_REXP Generate output file (CSV) · P_RPARM Maintain parameters · P_RPURG Purge old logs · P_BUKRS Company Code · P_BRANCH Business Place · P_NFTYPE NF Type · P_DOCDAT Issue Date · P_FILE Excel File · P_TEST Validate only (no NF creation) · P_LERR Lines with errors only · P_XSITU Taxation type (I = inside SP, O = outside) · P_XNEW Not yet exported only · P_PBUKRS Company Code · P_PDATE Delete files executed before · P_PTEST Test run (count only) · S_L*/S_X*: usar "Dictionary reference".
 
 **Símbolos de texto**
 
@@ -274,7 +274,6 @@ Manutenção (SE54): grupo de funções ZSD_BR_NFSE_PARM, tela única, grupo de 
 | 044 | Simulation: &1 files, &2 lines and &3 messages would be deleted |
 | 045 | File &1 has no lines to reprocess |
 | 046 | Reprocessing started by &1 |
-| 047 | Clipboard is empty - copy the worksheet in Excel from cell A1 |
 
 ## 7. Conteúdo inicial da ZSD_BR_NFSE_PARM (empresa 5596)
 

@@ -38,10 +38,6 @@ SELECTION-SCREEN BEGIN OF BLOCK b_upl WITH FRAME TITLE TEXT-b02.
 * program (month-end closing) - see AT SELECTION-SCREEN OUTPUT.
     p_docdat TYPE j_1bnfdoc-docdat   DEFAULT sy-datum MODIF ID doc,
     p_file   TYPE rlgrap-filename    LOWER CASE     MODIF ID upl,
-* Alternative to the file (e.g. Citrix without access to local drives):
-* the worksheet is copied in Excel (Ctrl+A, Ctrl+C) and read from the
-* clipboard - see FORM READ_CLIPBOARD (ZSD_BR_NFSE_F01).
-    p_clip   AS CHECKBOX USER-COMMAND clp           MODIF ID upl,
     p_test   AS CHECKBOX                            MODIF ID upl.
 SELECTION-SCREEN END OF BLOCK b_upl.
 

@@ -14,7 +14,7 @@
 *   - 7 domains (with fixed values)                                   *
 *   - 71 data elements (English labels)                               *
 *   - 4 tables ZSD_BR_NFSE_FILE / _DATA / _LOG / _PARM                *
-*   - message class ZSD_BR_NFSE_MSG with messages 001 - 047           *
+*   - message class ZSD_BR_NFSE_MSG with messages 001 - 046           *
 * Objects that already exist are skipped, never overwritten.          *
 * "Test run" (default) only lists what would be created.              *
 * Master language of every object: English (guideline item 11).       *
@@ -460,7 +460,6 @@ FORM fill_definitions.
     ( msgnr = '044' text = 'Simulation: &1 files, &2 lines and &3 messages would be deleted' )
     ( msgnr = '045' text = 'File &1 has no lines to reprocess' )
     ( msgnr = '046' text = 'Reprocessing started by &1' )
-    ( msgnr = '047' text = 'Clipboard is empty - copy the worksheet in Excel from cell A1' )
   ).
 
 ENDFORM.

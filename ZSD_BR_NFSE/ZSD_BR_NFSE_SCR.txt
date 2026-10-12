@@ -52,9 +52,6 @@ AT SELECTION-SCREEN OUTPUT.
       WHEN 'EXP'.
         screen-active = COND #( WHEN p_rexp = abap_true THEN 1 ELSE 0 ).
     ENDCASE.
-    IF screen-name = 'P_FILE' AND p_clip = abap_true.
-      screen-input = 0.                      " data comes from the clipboard
-    ENDIF.
     MODIFY SCREEN.
   ENDLOOP.
 

@@ -14,7 +14,7 @@
 *   - 7 domains (with fixed values)                                   *
 *   - 71 data elements (English labels)                               *
 *   - 4 tables ZSD_BR_NFSE_FILE / _DATA / _LOG / _PARM                *
-*   - message class ZSD_BR_NFSE_MSG with messages 001 - 047           *
+*   - message class ZSD_BR_NFSE_MSG with messages 001 - 046           *
 * Objects that already exist are skipped, never overwritten.          *
 * "Test run" (default) only lists what would be created.              *
 * Master language of every object: English (guideline item 11).       *
