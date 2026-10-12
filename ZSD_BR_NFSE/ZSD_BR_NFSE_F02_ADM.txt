@@ -53,18 +53,25 @@ ENDFORM.
 FORM set_purge_default_date USING    uv_bukrs TYPE bukrs
                             CHANGING cv_date  TYPE datum.
 
-  DATA lv_years TYPE i.
+* The function module's parameters are typed with T5A4A fields
+* (NUMC 2 / CHAR 1), so integer values cannot be passed directly.
+  DATA: lv_retention TYPE i,
+        lv_years     TYPE t5a4a-dlyyr,
+        lv_months    TYPE t5a4a-dlymo,
+        lv_days      TYPE t5a4a-dlydy,
+        lv_signum    TYPE t5a4a-split VALUE '-'.
 
   gs_file-bukrs = uv_bukrs.
   PERFORM load_params USING uv_bukrs.
-  PERFORM get_param_number USING gc_p_retention gc_def_retention CHANGING lv_years.
+  PERFORM get_param_number USING gc_p_retention gc_def_retention CHANGING lv_retention.
+  lv_years = lv_retention.
 
   CALL FUNCTION 'RP_CALC_DATE_IN_INTERVAL'
     EXPORTING
       date      = sy-datum
-      days      = 0
-      months    = 0
-      signum    = '-'
+      days      = lv_days
+      months    = lv_months
+      signum    = lv_signum
       years     = lv_years
     IMPORTING
       calc_date = cv_date.
