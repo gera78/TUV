@@ -174,7 +174,7 @@ TYPES:
   gty_log_tab   TYPE STANDARD TABLE OF zsd_br_nfse_log WITH DEFAULT KEY,
   gty_file_tab  TYPE STANDARD TABLE OF zsd_br_nfse_file WITH DEFAULT KEY,
   gty_param_tab TYPE SORTED TABLE OF zsd_br_nfse_parm
-                WITH UNIQUE KEY bukrs field_name file_column_name input,
+                WITH UNIQUE KEY bukrs field_name file_column_name z_input,
 
 * Next free log item per line, so new messages never collide with old ones
   BEGIN OF gty_log_counter,

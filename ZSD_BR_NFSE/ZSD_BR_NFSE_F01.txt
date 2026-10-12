@@ -881,7 +881,7 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 *&      Form  GET_PARAM
 *&---------------------------------------------------------------------*
-* Mapping lookup in ZSD_BR_NFSE_PARM: exact INPUT first, then "*".
+* Mapping lookup in ZSD_BR_NFSE_PARM: exact Z_INPUT first, then "*".
 *----------------------------------------------------------------------*
 FORM get_param USING    uv_field  TYPE fieldname
                         uv_column TYPE any
@@ -902,16 +902,16 @@ FORM get_param USING    uv_field  TYPE fieldname
     WITH TABLE KEY bukrs            = gs_file-bukrs
                    field_name       = uv_field
                    file_column_name = lv_column
-                   input            = lv_input.
+                   z_input          = lv_input.
   IF sy-subrc <> 0.
     READ TABLE gt_param INTO ls_param
       WITH TABLE KEY bukrs            = gs_file-bukrs
                      field_name       = uv_field
                      file_column_name = lv_column
-                     input            = gc_wildcard.
+                     z_input          = gc_wildcard.
   ENDIF.
   IF sy-subrc = 0.
-    cv_output = ls_param-output.
+    cv_output = ls_param-z_output.
     cv_found  = abap_true.
   ENDIF.
 
@@ -920,7 +920,7 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 *&      Form  GET_PARAM_TEXT
 *&---------------------------------------------------------------------*
-* Fixed parameter (no file column, INPUT = "*") with a default value.
+* Fixed parameter (no file column, Z_INPUT = "*") with a default value.
 *----------------------------------------------------------------------*
 FORM get_param_text USING    uv_field   TYPE fieldname
                              uv_default TYPE any

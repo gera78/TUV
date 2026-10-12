@@ -349,8 +349,8 @@ Prefixos: `TAKER_` = Tomador · `RCP_` = Destinatário · `SITE_` = Imóvel/Obra
 | BUKRS | ✔ | `BUKRS` | CHAR 4 | Company code |
 | FIELD_NAME | ✔ | `ZSD_BR_NFSE_FIELD_NAME` | CHAR 30 | Target field / parameter name |
 | FILE_COLUMN_NAME | ✔ | `ZSD_BR_NFSE_FILE_COLUMN_NAME` | CHAR 60 | Excel column header (vazio = parâmetro fixo) |
-| INPUT | ✔ | `ZSD_BR_NFSE_INPUT_VALUE` | CHAR 60 | Value read from file (`*` = default) |
-| OUTPUT | | `ZSD_BR_NFSE_OUTPUT_VALUE` | CHAR 255 | Value used in SAP |
+| Z_INPUT | ✔ | `ZSD_BR_NFSE_INPUT_VALUE` | CHAR 60 | Value read from file (`*` = default) |
+| Z_OUTPUT | | `ZSD_BR_NFSE_OUTPUT_VALUE` | CHAR 255 | Value used in SAP |
 
 Configurações técnicas: classe de entrega **C** (customizing), **log de alterações ativo**, grupo de autorização para `S_TABU_DIS`.
 
@@ -387,11 +387,11 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 
 ## 8. Tabela de parâmetros – regras e conteúdo inicial
 
-**Busca**: `BUKRS` + `FIELD_NAME` + `FILE_COLUMN_NAME` + `INPUT` exato → se não encontrar, mesma chave com `INPUT = '*'` → se não encontrar: erro 023/025 (ou uso do próprio valor, quando o parâmetro é opcional).
+**Busca**: `BUKRS` + `FIELD_NAME` + `FILE_COLUMN_NAME` + `Z_INPUT` exato → se não encontrar, mesma chave com `Z_INPUT = '*'` → se não encontrar: erro 023/025 (ou uso do próprio valor, quando o parâmetro é opcional).
 
 ### 8.1 Mapeamentos (dependem de valor da planilha)
 
-| FIELD_NAME | FILE_COLUMN_NAME | INPUT | OUTPUT (exemplo) | Obrig. | Uso |
+| FIELD_NAME | FILE_COLUMN_NAME | Z_INPUT | Z_OUTPUT (exemplo) | Obrig. | Uso |
 |---|---|---|---|---|---|
 | MATNR | Código do Serviço Prestado na Nota Fiscal | 1805 | 56984-258656-22 | Sim | Material do item (msg 005) |
 | KUNNR | Codigo SAP | (valor) | (cliente) | Não | Sem entrada → usa o próprio Código SAP ✅ |
@@ -402,9 +402,9 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | TAXLW3 | ISS Retido | Y / N | (lei ISS) | Sim | Lei fiscal ISS |
 | CCLASSTRIB | Código do Serviço Prestado na Nota Fiscal | 1805 | (cClassTrib) | Não | Padrão se coluna AY vazia |
 
-### 8.2 Parâmetros fixos (`FILE_COLUMN_NAME` vazio, `INPUT = '*'`)
+### 8.2 Parâmetros fixos (`FILE_COLUMN_NAME` vazio, `Z_INPUT = '*'`)
 
-| FIELD_NAME | OUTPUT (exemplo) | Obrig. | Uso |
+| FIELD_NAME | Z_OUTPUT (exemplo) | Obrig. | Uso |
 |---|---|---|---|
 | SHEET_NAME | Emissão NF - Ductor | Sim | Aba lida |
 | TAXTYP_CBS | (tipo CBS – notas reforma) | Se coluna J > 0 | Grupo 01 |
@@ -437,7 +437,7 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 
 **Mapeamento por código de serviço (arquivo de saída)**
 
-| FIELD_NAME | FILE_COLUMN_NAME | INPUT | OUTPUT (exemplo) | Uso |
+| FIELD_NAME | FILE_COLUMN_NAME | Z_INPUT | Z_OUTPUT (exemplo) | Uso |
 |---|---|---|---|---|
 | SRV_DESCRIPTION | Código do Serviço Prestado na Nota Fiscal | 1902 | Pericias, laudos, exames tecnicos e analises tecnicas, inclusive institutos psicotecnicos. | Prefixo da discriminação (col. 73), como a PMSP faz |
 | SRV_DESCRIPTION | Código do Serviço Prestado na Nota Fiscal | 1805 | Acompanhamento e fiscalizacao da execucao de obras de engenharia, arquitetura e urbanismo. | |

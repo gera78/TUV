@@ -164,10 +164,10 @@ Chave MANDT + FILE_ID + LINE_ID. Nomes de campo com no máximo 16 caracteres (li
 | BUKRS | X | BUKRS |
 | FIELD_NAME | X | ZSD_BR_NFSE_FIELD_NAME |
 | FILE_COLUMN_NAME | X | ZSD_BR_NFSE_FILE_COLUMN_NAME |
-| INPUT | X | ZSD_BR_NFSE_INPUT_VALUE |
-| OUTPUT | | ZSD_BR_NFSE_OUTPUT_VALUE |
+| Z_INPUT | X | ZSD_BR_NFSE_INPUT_VALUE |
+| Z_OUTPUT | | ZSD_BR_NFSE_OUTPUT_VALUE |
 
-Manutenção (SE54): grupo de funções ZSD_BR_NFSE_PARM, tela única, grupo de autorização próprio (S_TABU_DIS). FILE_COLUMN_NAME, INPUT e OUTPUT com "Lower case" marcado no domínio.
+Manutenção (SE54): grupo de funções ZSD_BR_NFSE_PARM, tela única, grupo de autorização próprio (S_TABU_DIS). FILE_COLUMN_NAME, Z_INPUT e Z_OUTPUT com "Lower case" marcado no domínio.
 
 ## 4. Outros objetos
 
@@ -277,7 +277,7 @@ Manutenção (SE54): grupo de funções ZSD_BR_NFSE_PARM, tela única, grupo de 
 
 ## 7. Conteúdo inicial da ZSD_BR_NFSE_PARM (empresa 5596)
 
-| FIELD_NAME | FILE_COLUMN_NAME | INPUT | OUTPUT |
+| FIELD_NAME | FILE_COLUMN_NAME | Z_INPUT | Z_OUTPUT |
 |---|---|---|---|
 | SHEET_NAME | | * | Emissão NF - Ductor |
 | MAX_LINES | | * | 500 |

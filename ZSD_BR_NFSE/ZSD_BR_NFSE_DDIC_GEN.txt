@@ -408,8 +408,8 @@ FORM fill_definitions.
     ( tabname = 'ZSD_BR_NFSE_PARM' fieldname = 'BUKRS' key = 'X' rollname = 'BUKRS' )
     ( tabname = 'ZSD_BR_NFSE_PARM' fieldname = 'FIELD_NAME' key = 'X' rollname = 'ZSD_BR_NFSE_FIELD_NAME' )
     ( tabname = 'ZSD_BR_NFSE_PARM' fieldname = 'FILE_COLUMN_NAME' key = 'X' rollname = 'ZSD_BR_NFSE_FILE_COLUMN_NAME' )
-    ( tabname = 'ZSD_BR_NFSE_PARM' fieldname = 'INPUT' key = 'X' rollname = 'ZSD_BR_NFSE_INPUT_VALUE' )
-    ( tabname = 'ZSD_BR_NFSE_PARM' fieldname = 'OUTPUT' key = ' ' rollname = 'ZSD_BR_NFSE_OUTPUT_VALUE' )
+    ( tabname = 'ZSD_BR_NFSE_PARM' fieldname = 'Z_INPUT' key = 'X' rollname = 'ZSD_BR_NFSE_INPUT_VALUE' )
+    ( tabname = 'ZSD_BR_NFSE_PARM' fieldname = 'Z_OUTPUT' key = ' ' rollname = 'ZSD_BR_NFSE_OUTPUT_VALUE' )
   ).
 
 * Messages of ZSD_BR_NFSE_MSG
