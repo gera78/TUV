@@ -175,7 +175,8 @@ FORM fill_alv USING ut_files TYPE gty_file_tab
         ls_alv-cancelled = ls_nf-cancel.
       ENDIF.
     ENDIF.
-    ls_alv-situation = COND #( WHEN ls_data-outside_sp_flag = gc_yes THEN 'F' ELSE 'T' ).
+    ls_alv-situation = COND #( WHEN ls_data-outside_sp_flag = gc_yes THEN gc_situ_outside
+                               ELSE gc_situ_inside ).
 
 *   Messages: count, warnings, the most relevant one as text
     DATA(lv_first_e) = ``.

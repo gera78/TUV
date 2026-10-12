@@ -102,7 +102,7 @@ FORM check_selection_screen.
       IF s_xbukrs[] IS INITIAL.
         MESSAGE e055(00).
       ENDIF.
-      IF p_xsitu IS NOT INITIAL AND p_xsitu <> 'T' AND p_xsitu <> 'F'.
+      IF p_xsitu IS NOT INITIAL AND p_xsitu <> gc_situ_inside AND p_xsitu <> gc_situ_outside.
         MESSAGE e055(00).
       ENDIF.
   ENDCASE.

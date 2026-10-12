@@ -165,7 +165,7 @@ Manutenção (SE54): grupo de funções ZSD_BR_NFSE_PARM, tela única, grupo de 
 
 ## 5. Textos dos programas
 
-**Textos de seleção** (os dois programas): P_RUPL Process upload and create NF Writer · P_RLOG Display execution log · P_REXP Generate output file (CSV) · P_RPARM Maintain parameters · P_RPURG Purge old logs · P_BUKRS Company Code · P_BRANCH Business Place · P_NFTYPE NF Type · P_DOCDAT Issue Date · P_FILE Excel File · P_TEST Validate only (no NF creation) · P_LERR Lines with errors only · P_XSITU Taxation type (T/F) · P_XNEW Not yet exported only · P_PBUKRS Company Code · P_PDATE Delete files executed before · P_PTEST Test run (count only) · S_L*/S_X*: usar "Dictionary reference".
+**Textos de seleção** (os dois programas): P_RUPL Process upload and create NF Writer · P_RLOG Display execution log · P_REXP Generate output file (CSV) · P_RPARM Maintain parameters · P_RPURG Purge old logs · P_BUKRS Company Code · P_BRANCH Business Place · P_NFTYPE NF Type · P_DOCDAT Issue Date · P_FILE Excel File · P_TEST Validate only (no NF creation) · P_LERR Lines with errors only · P_XSITU Taxation type (I = inside SP, O = outside) · P_XNEW Not yet exported only · P_PBUKRS Company Code · P_PDATE Delete files executed before · P_PTEST Test run (count only) · S_L*/S_X*: usar "Dictionary reference".
 
 **Símbolos de texto**
 
@@ -190,7 +190,7 @@ Manutenção (SE54): grupo de funções ZSD_BR_NFSE_PARM, tela única, grupo de 
 | C04 | Exported |
 | C05 | Message |
 | C06 | Messages |
-| C07 | Taxation (T/F) |
+| C07 | Taxation (I/O) |
 | C08 | NFS-e Status |
 | C09 | NF Cancelled |
 | H01 | File |

@@ -66,9 +66,9 @@ FORM display_export.
   ENDIF.
 
   CASE p_xsitu.
-    WHEN 'T'.
+    WHEN gc_situ_inside.
       DELETE lt_data WHERE outside_sp_flag = gc_yes.
-    WHEN 'F'.
+    WHEN gc_situ_outside.
       DELETE lt_data WHERE outside_sp_flag <> gc_yes.
   ENDCASE.
   IF p_xnew = abap_true.
@@ -466,7 +466,8 @@ FORM build_csv_fields USING    us_alv    TYPE gty_alv
 
 * 22 - 33: taxation and values
   ct_fields[ 22 ] = '0'.
-  ct_fields[ 23 ] = us_alv-situation.                       " T = SP, F = outside SP
+  ct_fields[ 23 ] = COND #( WHEN us_alv-situation = gc_situ_outside THEN gc_portal_outside
+                            ELSE gc_portal_inside ).          " portal: T = SP, F = outside
   PERFORM format_amount USING us_alv-service_amount CHANGING lv_text.
   ct_fields[ 27 ] = lv_text.
   ct_fields[ 28 ] = '0,00'.

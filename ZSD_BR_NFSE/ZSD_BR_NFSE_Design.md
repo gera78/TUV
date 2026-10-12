@@ -167,7 +167,7 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
 | `S_FILEID` | `ZSD_BR_NFSE_FILE-FILE_ID` | Arquivo carregado |
 | `S_KUNNR` | `ZSD_BR_NFSE_DATA-KUNNR` | |
 | `S_SRVCD` | `ZSD_BR_NFSE_DATA-SERVICE_CODE` | Código de serviço |
-| `S_SITU` | T / F | Tipo de tributação: T = dentro de SP · F = fora de SP (derivado de "Prestação fora de SP") |
+| `P_XSITU` | I / O | Tipo de tributação: I = dentro de SP (inside) · O = fora de SP (outside), derivado de "Prestação fora de SP". No CSV vira T/F, código do portal |
 | `P_NEWONLY` | Checkbox, padrão X | "Not yet exported only" – desmarcado traz também as já exportadas |
 
 Somente linhas com **status S** (NF criada), **NFS-e autorizada** em `J_1BNFE_ACTIVE` (`DOCSTA = 1`, sem cancelamento) e **Nº da NFS-e preenchido** (`J_1BNFDOC-NFENUM`, gravado automaticamente pelo processo J1BNFE) e **NF não cancelada** no SAP são selecionáveis. As demais aparecem com a situação lida da `J_1BNFE_ACTIVE` ("Awaiting authorization", "Rejected", "Cancelled"), sem checkbox. O resultado abre no ALV de exportação (seção 14.3), onde o usuário marca as linhas e gera o arquivo.
@@ -764,7 +764,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | KUNNR / TAKER_NAME | ✔ | |
 | SERVICE_AMOUNT | ✔ | Com total das linhas marcadas |
 | ISS_AMT | ✔ | Com total |
-| Situação (T/F) | ✔ | |
+| Situação (I/O) | ✔ | |
 | SERVICE_CODE | ✔ | |
 | DOCNUM | ✔ | Hotspot J1B3N |
 | EXPORT_FILE / EXPORT_DATE / EXPORT_USER / EXPORT_COUNT | ✔ | Última exportação |

@@ -75,7 +75,7 @@ SELECTION-SCREEN BEGIN OF BLOCK b_exp WITH FRAME TITLE TEXT-b04.
     s_xkunnr FOR zsd_br_nfse_data-kunnr        MODIF ID exp,
     s_xsrvcd FOR zsd_br_nfse_data-service_code MODIF ID exp.
   PARAMETERS:
-* Taxation type: T = service within São Paulo, F = outside, blank = both
+* Taxation type: I = service inside São Paulo, O = outside, blank = both
     p_xsitu TYPE char1 MODIF ID exp,
     p_xnew  AS CHECKBOX DEFAULT 'X' MODIF ID exp.
 SELECTION-SCREEN END OF BLOCK b_exp.

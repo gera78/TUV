@@ -53,6 +53,12 @@ CONSTANTS:
   gc_no           TYPE char1    VALUE 'N',
   gc_sheet_yes    TYPE char1    VALUE 'S',   " "Sim" - Yes as typed in the spreadsheet and
                                              " written to the city portal layout (CSV)
+* Taxation of the service: I/O on screen and in the ALV, T/F only in
+* the city portal CSV (column 23 "Situação da Nota Fiscal")
+  gc_situ_inside   TYPE char1   VALUE 'I',   " service within São Paulo
+  gc_situ_outside  TYPE char1   VALUE 'O',   " service outside São Paulo
+  gc_portal_inside TYPE char1   VALUE 'T',   " portal code: taxed in São Paulo
+  gc_portal_outside TYPE char1  VALUE 'F',   " portal code: taxed outside ("fora")
   gc_wildcard     TYPE char1    VALUE '*'.
 
 * Line status (domain ZSD_BR_NFSE_LINE_STATUS)
@@ -238,7 +244,7 @@ TYPES:
     authtime      TYPE j_1bnfdoc-authtime,
     nfse_state    TYPE char40,                    " export list: authorization state text
     cancelled     TYPE j_1bnfdoc-cancel,
-    situation     TYPE char1,                     " T = within São Paulo, F = outside
+    situation     TYPE char1,                     " I = inside São Paulo, O = outside
     msg_count     TYPE i,
     has_warning   TYPE abap_bool,
     message       TYPE bapi_msg,
