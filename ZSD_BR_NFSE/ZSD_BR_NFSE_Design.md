@@ -816,6 +816,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | 038 | &1 lines exported to &2 | ✅ |
 | 039 | RPS &1 is invalid (numeric, max. 6 digits) | ✅ |
 | 040 | CBS/IBS not sent to the NF (parameter SEND_CBS_IBS is off) | ✅ (I) |
+| 047 | Error calling &1: &2&3&4 – falha na chamada da BAPI de criação da NF (ex.: parâmetro desconhecido); a linha fica com erro, sem dump | ✅ |
 
 ---
 

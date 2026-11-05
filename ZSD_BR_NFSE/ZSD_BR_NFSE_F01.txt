@@ -1720,6 +1720,10 @@ ENDFORM.
 *              (same LUW - the NF never exists without its log)
 *   error   -> BAPI_TRANSACTION_ROLLBACK, DATA: E, BAPI messages in
 *              the LOG, COMMIT WORK
+* The call never ends in a dump: interface errors of the call itself
+* (CX_SY_DYN_CALL_ERROR, e.g. unknown parameter) are logged as 047 and
+* error messages raised inside the BAPI (ERROR_MESSAGE) are logged with
+* their own class/number; in both cases the line gets status E.
 *----------------------------------------------------------------------*
 FORM create_nf CHANGING cs_data TYPE zsd_br_nfse_data.
 
@@ -1729,26 +1733,54 @@ FORM create_nf CHANGING cs_data TYPE zsd_br_nfse_data.
         lt_tax     TYPE STANDARD TABLE OF bapi_j_1bnfstx,
         lt_text    TYPE STANDARD TABLE OF bapi_j_1bnfftx,
         lt_return  TYPE STANDARD TABLE OF bapiret2,
-        lv_docnum  TYPE j_1bdocnum.
+        lv_docnum  TYPE j_1bdocnum,
+        lv_text    TYPE c LENGTH 150,
+        lv_call_ok TYPE abap_bool VALUE abap_true.
 
   PERFORM build_bapi_header  USING cs_data CHANGING ls_header lt_partner.
   PERFORM build_bapi_item    USING cs_data CHANGING lt_item.
   PERFORM build_bapi_taxes   USING cs_data CHANGING lt_tax.
   PERFORM build_bapi_texts   USING cs_data CHANGING lt_text.
 
-  CALL FUNCTION 'BAPI_J_1B_NF_CREATEFROMDATA'
-    EXPORTING
-      obj_header     = ls_header
-    IMPORTING
-      doc_number     = lv_docnum
-    TABLES
-      obj_partner    = lt_partner
-      obj_item       = lt_item
-      obj_item_tax   = lt_tax
-      obj_header_msg = lt_text
-      return         = lt_return.
+  TRY.
+      CALL FUNCTION 'BAPI_J_1B_NF_CREATEFROMDATA'
+        EXPORTING
+          obj_header     = ls_header
+        IMPORTING
+          e_docnum       = lv_docnum
+        TABLES
+          obj_partner    = lt_partner
+          obj_item       = lt_item
+          obj_item_tax   = lt_tax
+          obj_header_msg = lt_text
+          return         = lt_return
+        EXCEPTIONS
+          error_message  = 1
+          OTHERS         = 2.
+      IF sy-subrc <> 0.
+        lv_call_ok = abap_false.
+        CLEAR lv_docnum.
+        IF sy-msgid IS NOT INITIAL.
+          PERFORM add_log_full USING cs_data-line_id gc_msgty_error sy-msgid sy-msgno
+                                     sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+        ELSE.
+          lv_text = |SY-SUBRC { sy-subrc }|.
+          PERFORM add_log USING cs_data-line_id gc_msgty_error '047'
+                                'BAPI_J_1B_NF_CREATEFROMDATA' lv_text(50) space.
+        ENDIF.
+      ENDIF.
+    CATCH cx_sy_dyn_call_error INTO DATA(lo_call_error).
+*     Wrong interface (parameter unknown, type conflict, ...): no dump
+      lv_call_ok = abap_false.
+      CLEAR lv_docnum.
+      lv_text = lo_call_error->get_text( ).
+      PERFORM add_log_full USING cs_data-line_id gc_msgty_error gc_msgid '047'
+                                 'BAPI_J_1B_NF_CREATEFROMDATA'
+                                 lv_text(50) lv_text+50(50) lv_text+100(50).
+  ENDTRY.
 
-  IF lv_docnum IS NOT INITIAL
+  IF lv_call_ok = abap_true
+     AND lv_docnum IS NOT INITIAL
      AND NOT line_exists( lt_return[ type = 'E' ] )
      AND NOT line_exists( lt_return[ type = 'A' ] ).
     cs_data-status = gc_line_success.

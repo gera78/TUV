@@ -274,6 +274,7 @@ Classe de entrega **A** (aplicação, não customizing): os parâmetros são man
 | 044 | Simulation: &1 files, &2 lines and &3 messages would be deleted |
 | 045 | File &1 has no lines to reprocess |
 | 046 | Reprocessing started by &1 |
+| 047 | Error calling &1: &2&3&4 |
 
 ## 7. Conteúdo inicial da ZSD_BR_NFSE_PARM (empresa 5596)
 

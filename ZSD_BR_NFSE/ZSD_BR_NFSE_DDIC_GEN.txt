@@ -460,6 +460,7 @@ FORM fill_definitions.
     ( msgnr = '044' text = 'Simulation: &1 files, &2 lines and &3 messages would be deleted' )
     ( msgnr = '045' text = 'File &1 has no lines to reprocess' )
     ( msgnr = '046' text = 'Reprocessing started by &1' )
+    ( msgnr = '047' text = 'Error calling &1: &2&3&4' )
   ).
 
 ENDFORM.
