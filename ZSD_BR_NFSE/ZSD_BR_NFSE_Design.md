@@ -352,7 +352,7 @@ Prefixos: `TAKER_` = Tomador · `RCP_` = Destinatário · `SITE_` = Imóvel/Obra
 | Z_INPUT | ✔ | `ZSD_BR_NFSE_INPUT_VALUE` | CHAR 60 | Value read from file (`*` = default) |
 | Z_OUTPUT | | `ZSD_BR_NFSE_OUTPUT_VALUE` | CHAR 255 | Value used in SAP |
 
-Configurações técnicas: classe de entrega **C** (customizing), **log de alterações ativo**, grupo de autorização para `S_TABU_DIS`.
+Configurações técnicas: classe de entrega **A** (aplicação – dados mestre e de transação, não customizing): os parâmetros são mantidos diretamente em cada mandante, inclusive em produção, sem ordem de transporte; **log de alterações ativo**, grupo de autorização para `S_TABU_DIS`.
 
 ---
 
@@ -709,7 +709,7 @@ Também atualiza `LINE_COUNT`, `SUCCESS_COUNT`, `ERROR_COUNT`.
 
 ### 13.1 Manutenção de parâmetros (opção 4)
 
-`VIEW_MAINTENANCE_CALL` (ação U, view `ZSD_BR_NFSE_PARM`), usando o TMG gerado. Vantagens: transporte padrão, log de alteração, autorização via `S_TABU_DIS`, sem dynpro manual.
+`VIEW_MAINTENANCE_CALL` (ação U, view `ZSD_BR_NFSE_PARM`), usando o TMG gerado. Vantagens: manutenção direta em produção (tabela classe A, sem ordem de transporte; se necessário, as entradas podem ser transportadas manualmente pela SM30 – Tabela/visão > Transporte), log de alteração, autorização via `S_TABU_DIS`, sem dynpro manual.
 
 ### 13.2 Expurgo de logs – LGPD (opção 5) ✅
 

@@ -28,7 +28,8 @@
 *&      Form  MAINTAIN_PARAMS
 *&---------------------------------------------------------------------*
 * Option 4 - change mode of the generated maintenance dialog (SE54).
-* Change log and transport come from the standard dialog.
+* Change log comes from the standard dialog. The table has delivery
+* class A, so no transport request is asked for.
 *----------------------------------------------------------------------*
 FORM maintain_params.
 

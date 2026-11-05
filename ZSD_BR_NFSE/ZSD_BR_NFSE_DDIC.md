@@ -1,6 +1,6 @@
 # ZSD_BR_NFSE – Especificação de dicionário e configuração
 
-Objetos a criar no sistema **antes** de ativar os programas. Ordem de transporte separada para o DDIC (guideline TÜV, item 14a). Classe de entrega das tabelas Z de log: **A**; da tabela de parâmetros: **C**.
+Objetos a criar no sistema **antes** de ativar os programas. Ordem de transporte separada para o DDIC (guideline TÜV, item 14a). Classe de entrega de todas as tabelas Z, inclusive a de parâmetros: **A** (aplicação – dados mestre e de transação).
 
 ## 0. Criação automática – programa ZSD_BR_NFSE_DDIC_GEN
 
@@ -167,7 +167,7 @@ Chave MANDT + FILE_ID + LINE_ID. Nomes de campo com no máximo 16 caracteres (li
 | Z_INPUT | X | ZSD_BR_NFSE_INPUT_VALUE |
 | Z_OUTPUT | | ZSD_BR_NFSE_OUTPUT_VALUE |
 
-Manutenção (SE54): grupo de funções ZSD_BR_NFSE_PARM, tela única, grupo de autorização próprio (S_TABU_DIS). FILE_COLUMN_NAME, Z_INPUT e Z_OUTPUT com "Lower case" marcado no domínio.
+Classe de entrega **A** (aplicação, não customizing): os parâmetros são mantidos diretamente em cada mandante, inclusive em produção, sem ordem de transporte. Manutenção (SE54): grupo de funções ZSD_BR_NFSE_PARM, tela única, rotina de gravação "sem rotina de gravação ou rotina do usuário" (não pede ordem de transporte), grupo de autorização próprio (S_TABU_DIS). FILE_COLUMN_NAME, Z_INPUT e Z_OUTPUT com "Lower case" marcado no domínio.
 
 ## 4. Outros objetos
 

@@ -373,8 +373,9 @@ ENDFORM.
 *&      Form  PROCESS_TABLES
 *&---------------------------------------------------------------------*
 * Transparent, client-dependent tables. Amount fields refer to
-* ZSD_BR_NFSE_DATA-WAERS. ZSD_BR_NFSE_PARM is customizing (class C),
-* maintainable and with change logging.
+* ZSD_BR_NFSE_DATA-WAERS. ZSD_BR_NFSE_PARM is an application table
+* (delivery class A - maintained directly in each client, no transport
+* request), maintainable and with change logging.
 *----------------------------------------------------------------------*
 FORM process_tables.
 
@@ -405,7 +406,9 @@ FORM process_tables.
     ls_dd02v-clidep     = abap_true.
     ls_dd02v-ddtext     = ls_table-text.
     ls_dd02v-contflag   = ls_table-contflag.
-    ls_dd02v-mainflag   = COND #( WHEN ls_table-contflag = 'C' THEN 'X' ELSE ' ' ).
+*   Only the parameter table (the one with change logging) is maintained
+*   in the dialog; the log tables keep restricted maintenance
+    ls_dd02v-mainflag   = COND #( WHEN ls_table-logging = abap_true THEN 'X' ELSE ' ' ).
     ls_dd02v-exclass    = '1'.                          " cannot be enhanced
 
     ls_dd09l-tabname  = ls_table-name.
