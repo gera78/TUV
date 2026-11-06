@@ -17,6 +17,10 @@
 * Change history                                                      *
 * 09.10.2026  Renato Santos                                           *
 * Initial version.                                                    *
+* 06.11.2026  Alexandre Marcondes Silva                               *
+* v0.5 - GV_BWKEY: valuation area of the item plant (8B 685).         *
+* - GC_P_HDR_TEXT_ID, GC_HDR_TEXT_WIDTH (NF header text).             *
+* - GC_PARTNER_ROLE = RE (bill-to party) instead of AG.               *
 *---------------------------------------------------------------------*
 
 TYPE-POOLS: icon.
@@ -52,11 +56,12 @@ CONSTANTS:
   gc_parm_view    TYPE tabname  VALUE 'ZSD_BR_NFSE_PARM',
   gc_lock_table   TYPE tabname  VALUE 'ZSD_BR_NFSE_FILE',
   gc_currency     TYPE waers    VALUE 'BRL',
-  gc_partner_role TYPE parvw    VALUE 'AG',
+  gc_partner_role TYPE parvw    VALUE 'RE',   " bill-to party, as in the SD service NFs
   gc_partner_type TYPE char1    VALUE 'C',
   gc_direct_out   TYPE char1    VALUE '2',
   gc_item_number  TYPE j_1bnflin-itmnum VALUE '000010',
   gc_text_width   TYPE i        VALUE 72,
+  gc_hdr_text_width TYPE i      VALUE 132,   " BAPI_J_1BNFTEXTHEADER-TEXT_LINE
   gc_header_row   TYPE i        VALUE 2,     " Excel row holding the column names
   gc_first_row    TYPE i        VALUE 3,     " first Excel row holding data
   gc_last_column  TYPE i        VALUE 54,    " A .. BB
@@ -111,6 +116,7 @@ CONSTANTS:
   gc_p_itmtyp        TYPE fieldname VALUE 'ITMTYP',
   gc_p_matuse        TYPE fieldname VALUE 'MATUSE',
   gc_p_matorg        TYPE fieldname VALUE 'MATORG',
+  gc_p_hdr_text_id   TYPE fieldname VALUE 'HDR_TEXT_ID',
   gc_p_taxlw1        TYPE fieldname VALUE 'TAXLW1',
   gc_p_taxlw2        TYPE fieldname VALUE 'TAXLW2',
   gc_p_taxlw3        TYPE fieldname VALUE 'TAXLW3',
@@ -276,6 +282,7 @@ DATA:
   gv_alv_mode    TYPE char10,
   gv_send_cbs    TYPE abap_bool,
   gv_werks       TYPE werks_d,
+  gv_bwkey       TYPE bwkey,       " valuation area of GV_WERKS (T001W-BWKEY)
   gv_iss_tol     TYPE p LENGTH 8 DECIMALS 2,
   gs_file        TYPE zsd_br_nfse_file,
   gs_j1baa       TYPE j_1baa,

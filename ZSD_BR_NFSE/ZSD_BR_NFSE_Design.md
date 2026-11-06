@@ -7,8 +7,9 @@
 | Projeto | TÜV – Criação de NF Writer a partir de planilha de NFS-e |
 | Empresa / Local de negócio | 5596 / 0001 (padrão) |
 | Ambiente | SAP S/4HANA (notas da Reforma Tributária em implantação) |
-| Versão | 0.4 – Nova opção: geração do arquivo de saída (CSV no layout da exportação de NFS-e da PMSP) com controle de exportação |
-| Data | 09.10.2026 |
+| Versão | 0.5 – Correções do teste de criação da NF (dump `E_DOCNUM`, 8B 660/685/150/151), check string da NF Writer, tabela de parâmetros classe A, mensagens 023/025 como aviso no Validate only. Histórico: [`CHANGELOG.md`](CHANGELOG.md) |
+| Data | 06.11.2026 (v0.4: 09.10.2026) |
+| Alterado por (v0.5) | Alexandre Marcondes Silva |
 | Developer / IT Responsible / Business Responsible | Renato Santos / Renato Santos / Juliana Reimberg |
 | Status | Em revisão do mockup → aprovação → codificação |
 
@@ -352,7 +353,7 @@ Prefixos: `TAKER_` = Tomador · `RCP_` = Destinatário · `SITE_` = Imóvel/Obra
 | Z_INPUT | ✔ | `ZSD_BR_NFSE_INPUT_VALUE` | CHAR 60 | Value read from file (`*` = default) |
 | Z_OUTPUT | | `ZSD_BR_NFSE_OUTPUT_VALUE` | CHAR 255 | Value used in SAP |
 
-Configurações técnicas: classe de entrega **C** (customizing), **log de alterações ativo**, grupo de autorização para `S_TABU_DIS`.
+Configurações técnicas: classe de entrega **A** (aplicação – dados mestre e de transação, não customizing): os parâmetros são mantidos diretamente em cada mandante, inclusive em produção, sem ordem de transporte; **log de alterações ativo**, grupo de autorização para `S_TABU_DIS`.
 
 ---
 
@@ -414,11 +415,12 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | TAXTYP_CSLL | (tipo CSLL retido) | Se coluna N > 0 | Grupo 03 |
 | TAXTYP_CBS_WHT | (tipo CBS retido) | Se coluna O > 0 | Grupo 03 |
 | TAXTYP_IBS_WHT | (tipo IBS retido) | Se coluna P > 0 | Grupo 03 |
-| TAXLW1 / TAXLW2 | (lei ICMS / IPI não tributado) | Sim | Item da NF |
+| TAXLW1 / TAXLW2 | (lei ICMS / IPI) | Não | v0.5: **não enviadas** – item de serviço (`TMISS = X`), como nas NFs de serviço do SD |
 | TAXLW4 / TAXLW5 | (lei COFINS / PIS) | Sim | ⏳ confirmar com fiscal |
 | ITMTYP | (tipo de item) | Sim | Item da NF |
 | MATUSE | (utilização do material) | Sim | Item da NF |
 | MATORG | 0 | Sim | Origem do material |
+| HDR_TEXT_ID | (ID de texto do cabeçalho da NF) | Não | ⏳ v0.5 – ID do texto de cabeçalho exibido na J1B3N para a discriminação dos serviços. Vazio = texto vai para `OBJ_HEADER_MSG` |
 | WERKS | (centro) | Não | Vazio → derivado do local de negócio (`J_1BT001WV`) |
 | TAXGRP_REQ_01 | X | Não | Grupo 01 obrigatório (msg 014) |
 | TAXGRP_REQ_02 | (vazio) | Não | Grupo 02 opcional |
@@ -486,8 +488,8 @@ Configurações técnicas: classe de entrega **C** (customizing), **log de alter
 | 016 | Município preenchido e 2 primeiros dígitos IBGE ≠ UF (tabela de 27 UFs) ou código ≠ 7 dígitos | V, W |
 | 017 ✅ | Duplicidade critério A – ver seção 10 | F |
 | 026 ✅ | Duplicidade critério B – ver seção 10 | B, H, I, U |
-| 023 ✅ | Coluna de imposto com valor > 0 sem `TAXTYP_*` configurado (colunas J, K, O, P só verificadas com `SEND_CBS_IBS = X`) | J–Q, S |
-| 025 ✅ | Parâmetro obrigatório não configurado (CFOP, TAXLW*, ITMTYP, MATUSE…) | – |
+| 023 ✅ | Coluna de imposto com valor > 0 sem `TAXTYP_*` configurado (colunas J, K, O, P só verificadas com `SEND_CBS_IBS = X`). **Aviso só no Validate only**; na execução real não é gerada – vale o retorno da BAPI | J–Q, S |
+| 025 ✅ | Parâmetro obrigatório não configurado ou vazio (CFOP, TAXLW*, ITMTYP, MATUSE, MATORG, WERKS). **Aviso só no Validate only**; na execução real não é gerada – vale o retorno da BAPI | – |
 
 **Avisos (tipo W – não bloqueiam; semáforo amarelo)** ✅
 
@@ -539,14 +541,16 @@ Uma NF por linha válida, 1 item, sob o bloqueio `EZSD_BR_NFSE`. Após a chamada
 | DOCDAT / PSTDAT | `P_DOCDAT` (padrão SY-DATUM) ✅ |
 | MANUAL | 'X' |
 | WAERK | 'BRL' |
-| PARVW / PARID / PARTYP | 'AG' / KUNNR / 'C' ✅ |
+| PARVW / PARID / PARTYP | 'RE' / KUNNR / 'C' ✅ (v0.5: RE – recebedor da fatura, como nas NFs de serviço do SD; antes AG) |
 | NFNUM | **RPS_NUMBER** ✅ (confirmado: o RPS é o `J_1BNFDOC-NFNUM`, 6 dígitos). Pré-requisito: NF type Z1 com numeração externa (manual) na J_1BAA |
+
+v0.5: `NFESRV = 'X'` (Service NF/NF-e) e `MUNICIPAL = 'X'` (Municipal Fiscal Document) enviados explicitamente, como nas NFs de serviço do SD.
 
 ### 11.2 `OBJ_PARTNER`
 
 | PARVW | PARID | PARTYP |
 |---|---|---|
-| AG | KUNNR | C |
+| RE | KUNNR | C |
 
 Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usados só para validação e log.
 
@@ -562,6 +566,7 @@ Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usad
 | WERKS | Parâmetro WERKS ou derivado do local de negócio |
 | CFOP | Parâmetro CFOP (por UF do tomador) |
 | ITMTYP / MATUSE / MATORG | Parâmetros |
+| TMISS / INCLTX | `X` / `X` – v0.5: item de serviço (ISS, sem ICMS/IPI) e preço com ISS incluído (sem isso o ISS era somado ao total) |
 | TAXLW1 / TAXLW2 / TAXLW4 / TAXLW5 | Parâmetros |
 | TAXLW3 | Parâmetro TAXLW3 (por ISS Retido) |
 | XPED | PO_NUMBER |
@@ -584,17 +589,23 @@ Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usad
 
 > ⚠️ Pré-requisito fiscal: tipos de retenção configurados como **retenção** na J_1BAJ (não somam ao total da NF) e NF type Z1 sem lançamento contábil (J_1BAA).
 
-### 11.5 `OBJ_HEADER_MSG` – texto da NF
+### 11.5 Texto da NF – `OBJ_HEADER_TEXT` (ou `OBJ_HEADER_MSG`)
 
-- Discriminação dos serviços: `||` e `|` = quebra de linha; cada linha quebrada em blocos de 72 caracteres (sem cortar palavras).
+- Discriminação dos serviços (coluna AH): `||` e `|` = quebra de linha; cada linha quebrada sem cortar palavras.
+- **v0.5**: com o parâmetro `HDR_TEXT_ID` preenchido, o texto vai para o **texto de cabeçalho da NF** (`OBJ_HEADER_TEXT`, estrutura `BAPI_J_1BNFTEXTHEADER`: `TEXT_ID` = parâmetro, `TEXT_FORM = '*'`, `TEXT_LINE` até 132 caracteres) e aparece na J1B3N. Com o parâmetro vazio, o comportamento anterior é mantido: `OBJ_HEADER_MSG`, linhas de 72 caracteres (não aparece na J1B3N).
 - O RPS não é repetido no texto: ele é o próprio número da NF (`NFNUM`).
 
 ### 11.6 Retorno
 
 | Resultado | ZSD_BR_NFSE_DATA | ZSD_BR_NFSE_LOG |
 |---|---|---|
-| Sucesso | STATUS = S, DOCNUM = DOC_NUMBER (gravado antes do COMMIT) | Msg 022 (tipo S) com DOCNUM |
+| Sucesso | STATUS = S, DOCNUM = E_DOCNUM (gravado antes do COMMIT) | Msg 022 (tipo S) com DOCNUM |
 | Erro | STATUS = E | Cada mensagem E/A do RETURN: classe (ID), número, texto |
+| Falha na chamada da BAPI (interface ou ERROR_MESSAGE) | STATUS = E, sem dump | Msg 047 ou a mensagem da própria BAPI |
+
+### 11.7 Check string da NF Writer – `BUILD_BAPI_NFCHECK`
+
+O `FORM BUILD_BAPI_NFCHECK` monta o check string de 47 posições lido pela rotina padrão `CHECK_NF_BAPI`, com todos os checks ligados e uma variável por check para desligar. Ele é passado à BAPI no parâmetro `NFCHECK` (`FORM CREATE_NF`). Detalhes, tabela das posições e pontos de atenção: [`ZSD_BR_NFSE_NFCHECK.md`](ZSD_BR_NFSE_NFCHECK.md).
 
 ---
 
@@ -709,7 +720,7 @@ Também atualiza `LINE_COUNT`, `SUCCESS_COUNT`, `ERROR_COUNT`.
 
 ### 13.1 Manutenção de parâmetros (opção 4)
 
-`VIEW_MAINTENANCE_CALL` (ação U, view `ZSD_BR_NFSE_PARM`), usando o TMG gerado. Vantagens: transporte padrão, log de alteração, autorização via `S_TABU_DIS`, sem dynpro manual.
+`VIEW_MAINTENANCE_CALL` (ação U, view `ZSD_BR_NFSE_PARM`), usando o TMG gerado. Vantagens: manutenção direta em produção (tabela classe A, sem ordem de transporte; se necessário, as entradas podem ser transportadas manualmente pela SM30 – Tabela/visão > Transporte), log de alteração, autorização via `S_TABU_DIS`, sem dynpro manual.
 
 ### 13.2 Expurgo de logs – LGPD (opção 5) ✅
 
@@ -798,9 +809,9 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | 020 | Customer &1 is blocked | ✅ |
 | 021 | No authorization for company code &1 / transaction &2 | ✅ |
 | 022 | Nota Fiscal &1 created successfully | ✅ |
-| 023 | Tax type not configured for &1 | ✅ |
+| 023 | Tax type not configured for &1 | ✅ (W, só Validate only) |
 | 024 | Service date missing or invalid | ✅ |
-| 025 | Parameter &1 not configured for value &2 | ✅ |
+| 025 | Parameter &1 not configured for value &2 | ✅ (W, só Validate only) |
 | 026 | Probable duplicate of file &1 line &2 (NF &3): same customer, date, amount and service | ✅ |
 | 027 | Processing cancelled by user (duplicates found) | ✅ |
 | 028 | Warning: customer &1 address in file differs from master data | ✅ (W) |
@@ -816,6 +827,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | 038 | &1 lines exported to &2 | ✅ |
 | 039 | RPS &1 is invalid (numeric, max. 6 digits) | ✅ |
 | 040 | CBS/IBS not sent to the NF (parameter SEND_CBS_IBS is off) | ✅ (I) |
+| 047 | Error calling &1: &2&3&4 – falha na chamada da BAPI de criação da NF (ex.: parâmetro desconhecido); a linha fica com erro, sem dump | ✅ |
 
 ---
 
@@ -843,6 +855,10 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | P19 | Número da coluna 2 (Nº NFS-e / Referência) | ✅ Nº oficial da NFS-e – disponível no SAP após o passo 03 (J1BNFE) | – |
 | P23 | Retorno da Prefeitura em `J_1BNFE_ACTIVE` | Nº NFS-e ✅ `J_1BNFDOC-NFENUM`. Data/hora e código de verificação ✅ `J_1BNFDOC-AUTHDATE`, `AUTHTIME`, `AUTHCOD`. ⏳ Confirmar numa nota autorizada o valor de `J_1BNFE_ACTIVE-DOCSTA` para NFS-e autorizada | Exportável = `DOCSTA = 1` e `NFENUM` preenchido |
 | P24 | Passos após o 06 do fluxo do cliente ("customer delivery") e se algum deles é o passo esquecido (P21) | ⏳ cliente | – |
+| P25 | Parâmetro `MATNR`: hoje o material do item é determinado pelo código de serviço – `FILE_COLUMN_NAME` = "Código do Serviço Prestado na Nota Fiscal" e `Z_INPUT` = código da coluna U (ex.: 1805), sem zeros à esquerda; sem cadastro para o código, usa a entrada `*`, se existir. Questionar se está correto: é preciso um material por código de serviço, ou o material deve ser único (só `*`) ou determinado por outro critério? | ⏳ em teste (funcional) | Mantido como está: um registro `MATNR` por código de serviço ou um `*` para todos; sem parâmetro → msg 005 |
+| P26 | Teste de 06/11/2026 – criação da NF com 8B 150 (situação tributária faltando) e 8B 151 (NCM faltando) no item de serviço. A situação tributária ICMS/IPI vem das leis fiscais TAXLW1/TAXLW2 (estavam vazias no parâmetro); o NCM vem do cadastro do material/centro. Definir: preencher TAXLW1/TAXLW2 e o NCM do material de serviço, ou enviar o item como item de ISS / desligar os checks 27 e 28 (`BUILD_BAPI_NFCHECK`) | ✅ checks 13, 27 e 28 desligados no `BUILD_BAPI_NFCHECK`, passado à BAPI no parâmetro `NFCHECK` | Validação 025 agora bloqueia parâmetro com valor vazio (antes passava e gerava 8B 660 para MATUSE); BWKEY do item preenchido com T001W-BWKEY do centro (8B 685) |
+| P27 | Comparação com NF de serviço correta do SD (226744) × NFs de teste 226751–753 (06/11/2026): total 2.100 em vez de 2.000, retenções sem flag, CFOP gravado `593/3A`, lei ISS `ISS`, parceiro AG | ✅ código v0.5: `TMISS`/`INCLTX`, flags `WITHHOLD`/`TAXINNET` nas retenções, TAXLW1/2 não enviadas, parceiro RE. ⏳ parâmetros: CFOP no formato `5933/AA` / `6933/AA`, `TAXLW3 = I01`, `TAXTYP_ISS` (ISSA × ISSE) com o fiscal; série / NFNUM (P1, P1a) e código de recolhimento das retenções a confirmar | – |
+| P28 | Open topics após o teste de 06/11/2026 (NF 226758): CFOP `593/3A` (campo `CFOP` antigo de 5 posições – usar `CFOP_10`), lei ISS `I01`, tipo de ISS, código de recolhimento, descrição do material em PT, série/NFNUM, `HDR_TEXT_ID`, `infCpl` (BAdI), Validate only com simulação | ⏳ lista OT1–OT11 em [`CHANGELOG.md`](CHANGELOG.md) | – |
 | P20 | Extensão e separador do arquivo de saída | ✅ `.csv`, separado por `;` | – |
 | P21 | Passo adicional que o cliente disse ter esquecido de mencionar | ⏳ cliente | – |
 | P22 | Quem envia os RPS à Prefeitura | ✅ SAP padrão, J1BNFE (passo 03 do fluxo do cliente) – fora do escopo deste desenvolvimento. O RPS é numerado na planilha ✅ e vai para `NFNUM` via BAPI; o J1BNFE apenas envia | – |
@@ -853,7 +869,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 
 ## 17. Entregáveis e próximos passos
 
-1. Revisão deste documento (v0.4) e do mockup – https://claude.ai/artifact/UewVEduzZQ7zAnPXbE3VZj
+1. Revisão deste documento (v0.5) e do mockup – https://claude.ai/artifact/UewVEduzZQ7zAnPXbE3VZj
 2. Aprovação.
 3. Codificação + especificação final do DDIC (transporte de DDIC separado – guideline item 14a).
 4. Documentação do programa para o usuário (SE38, em português) além do header ✅.

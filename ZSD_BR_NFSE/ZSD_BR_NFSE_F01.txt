@@ -26,6 +26,20 @@
 * Change history                                                      *
 * 09.10.2026  Renato Santos                                           *
 * Initial version.                                                    *
+* 06.11.2026  Alexandre Marcondes Silva                               *
+* v0.5 - BAPI parameter E_DOCNUM (dump fix); call errors of the       *
+*   BAPI logged (msg 047), no dump.                                   *
+* - BUILD_BAPI_NFCHECK: NF Writer check string, passed in NFCHECK     *
+*   (checks 13, 27, 28 off - 8B 150 / 8B 151).                        *
+* - Item BWKEY from T001W of the plant (8B 685).                      *
+* - 025: parameter value must be filled (8B 660); MATORG checked.     *
+* - 023 / 025 as warning only in Validate only (ADD_CONFIG_LOG).      *
+* - Service description as NF header text (OBJ_HEADER_TEXT, text ID   *
+*   from parameter HDR_TEXT_ID); OBJ_HEADER_MSG if it is empty.       *
+* - Service item: TMISS / INCLTX = X (NF total included ISS twice);   *
+*   TAXLW1/TAXLW2 not sent nor checked; withheld tax lines with       *
+*   WITHHOLD / TAXINNET = X (SET_WITHHELD); partner function RE.      *
+* - Header NFESRV / MUNICIPAL = X (service NF, municipal document).   *
 *---------------------------------------------------------------------*
 
 *&---------------------------------------------------------------------*
@@ -999,7 +1013,8 @@ ENDFORM.
 *&      Form  DETERMINE_PLANT
 *&---------------------------------------------------------------------*
 * Plant of the NF item: parameter WERKS, otherwise the first plant
-* assigned to the business place (T001W-J_1BBRANCH).
+* assigned to the business place (T001W-J_1BBRANCH). Also reads the
+* valuation area of that plant (T001W-BWKEY) for the item.
 *----------------------------------------------------------------------*
 FORM determine_plant.
 
@@ -1014,6 +1029,14 @@ FORM determine_plant.
       INTO @gv_werks
       UP TO 1 ROWS.
     ENDSELECT.
+  ENDIF.
+
+* Valuation area of the plant - item BWKEY (standard check 8B 685)
+  CLEAR gv_bwkey.
+  IF gv_werks IS NOT INITIAL.
+    SELECT SINGLE bwkey FROM t001w
+      WHERE werks = @gv_werks
+      INTO @gv_bwkey.
   ENDIF.
 
 ENDFORM.
@@ -1362,8 +1385,12 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 * 023 - every tax column with a value needs its tax type parameter
 *       (CBS/IBS columns only when SEND_CBS_IBS = X).
-* 025 - other mandatory NF parameters (CFOP, tax laws, item type,
-*       material usage, plant).
+* 025 - other mandatory NF parameters (CFOP, ISS/PIS/COFINS laws, item type,
+*       material usage, material origin, plant) - missing or with an
+*       empty value.
+* Configuration messages never block the line (see ADD_CONFIG_LOG):
+* warning in "Validate only", not written in the real run - there the
+* BAPI return tells what is missing. CV_OK is kept for the interface.
 *----------------------------------------------------------------------*
 FORM check_line_config USING    us_data TYPE zsd_br_nfse_data
                        CHANGING cv_ok   TYPE abap_bool.
@@ -1389,41 +1416,56 @@ FORM check_line_config USING    us_data TYPE zsd_br_nfse_data
     PERFORM get_param USING gc_p_taxtyp_iss gc_col_iss_wht us_data-iss_wht_flag
                       CHANGING lv_value lv_found.
     IF lv_found = abap_false OR lv_value IS INITIAL.
-      PERFORM add_log USING lv_line gc_msgty_error '023' 'ISS' space space.
-      cv_ok = abap_false.
+      PERFORM add_config_log USING lv_line '023' 'ISS' space.
     ENDIF.
   ENDIF.
 
 * CFOP by service taker region
   PERFORM get_param USING gc_p_cfop gc_col_taker_region us_data-taker_region
                     CHANGING lv_value lv_found.
-  IF lv_found = abap_false.
-    PERFORM add_log USING lv_line gc_msgty_error '025' gc_p_cfop us_data-taker_region space.
-    cv_ok = abap_false.
+  IF lv_found = abap_false OR lv_value IS INITIAL.
+    PERFORM add_config_log USING lv_line '025' gc_p_cfop us_data-taker_region.
   ENDIF.
 
 * ISS tax law by withheld flag
   PERFORM get_param USING gc_p_taxlw3 gc_col_iss_wht us_data-iss_wht_flag
                     CHANGING lv_value lv_found.
-  IF lv_found = abap_false.
-    PERFORM add_log USING lv_line gc_msgty_error '025' gc_p_taxlw3 us_data-iss_wht_flag space.
-    cv_ok = abap_false.
+  IF lv_found = abap_false OR lv_value IS INITIAL.
+    PERFORM add_config_log USING lv_line '025' gc_p_taxlw3 us_data-iss_wht_flag.
   ENDIF.
 
-* Fixed item parameters
-  DATA(lt_fixed) = VALUE gty_fieldname_tab( ( gc_p_taxlw1 ) ( gc_p_taxlw2 ) ( gc_p_taxlw4 )
-                                            ( gc_p_taxlw5 ) ( gc_p_itmtyp ) ( gc_p_matuse ) ).
+* Fixed item parameters - must exist AND have a value (an entry with
+* empty Z_OUTPUT would reach the BAPI empty, e.g. 8B 660 for MATUSE)
+  DATA(lt_fixed) = VALUE gty_fieldname_tab( ( gc_p_taxlw4 ) ( gc_p_taxlw5 ) ( gc_p_itmtyp )
+                                            ( gc_p_matuse ) ( gc_p_matorg ) ).
   LOOP AT lt_fixed INTO DATA(lv_name).
     PERFORM get_param USING lv_name '' gc_wildcard CHANGING lv_value lv_found.
-    IF lv_found = abap_false.
-      PERFORM add_log USING lv_line gc_msgty_error '025' lv_name gc_wildcard space.
-      cv_ok = abap_false.
+    IF lv_found = abap_false OR lv_value IS INITIAL.
+      PERFORM add_config_log USING lv_line '025' lv_name gc_wildcard.
     ENDIF.
   ENDLOOP.
 
   IF gv_werks IS INITIAL.
-    PERFORM add_log USING lv_line gc_msgty_error '025' gc_p_werks gs_file-branch space.
-    cv_ok = abap_false.
+    PERFORM add_config_log USING lv_line '025' gc_p_werks gs_file-branch.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  ADD_CONFIG_LOG
+*&---------------------------------------------------------------------*
+* Configuration messages (023 / 025):
+*   Validate only (P_TEST) -> logged as warning (W), line not blocked
+*   Real run               -> not logged; the NF Writer checks of the
+*                             BAPI report the problem in its RETURN
+*----------------------------------------------------------------------*
+FORM add_config_log USING uv_line  TYPE any
+                          uv_msgno TYPE any
+                          uv_v1    TYPE any
+                          uv_v2    TYPE any.
+
+  IF gs_file-test_run = abap_true.
+    PERFORM add_log USING uv_line gc_msgty_warning uv_msgno uv_v1 uv_v2 space.
   ENDIF.
 
 ENDFORM.
@@ -1431,7 +1473,8 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 *&      Form  CHECK_TAX_TYPE
 *&---------------------------------------------------------------------*
-* 023 - a tax column with a value needs its TAXTYP_* parameter.
+* 023 - a tax column with a value needs its TAXTYP_* parameter
+*       (warning in Validate only - see ADD_CONFIG_LOG).
 *----------------------------------------------------------------------*
 FORM check_tax_type USING    uv_line   TYPE any
                              uv_amount TYPE any
@@ -1445,8 +1488,7 @@ FORM check_tax_type USING    uv_line   TYPE any
   IF uv_amount > 0.
     PERFORM get_param USING uv_param '' gc_wildcard CHANGING lv_value lv_found.
     IF lv_found = abap_false OR lv_value IS INITIAL.
-      PERFORM add_log USING uv_line gc_msgty_error '023' uv_label space space.
-      cv_ok = abap_false.
+      PERFORM add_config_log USING uv_line '023' uv_label space.
     ENDIF.
   ENDIF.
 
@@ -1715,11 +1757,16 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 *&      Form  CREATE_NF
 *&---------------------------------------------------------------------*
-* One NF Writer per line:
+* One NF Writer per line (checks of the standard switched by the check
+* string of BUILD_BAPI_NFCHECK, parameter NFCHECK):
 *   success -> DATA: S + DOCNUM, LOG 022, then BAPI_TRANSACTION_COMMIT
 *              (same LUW - the NF never exists without its log)
 *   error   -> BAPI_TRANSACTION_ROLLBACK, DATA: E, BAPI messages in
 *              the LOG, COMMIT WORK
+* The call never ends in a dump: interface errors of the call itself
+* (CX_SY_DYN_CALL_ERROR, e.g. unknown parameter) are logged as 047 and
+* error messages raised inside the BAPI (ERROR_MESSAGE) are logged with
+* their own class/number; in both cases the line gets status E.
 *----------------------------------------------------------------------*
 FORM create_nf CHANGING cs_data TYPE zsd_br_nfse_data.
 
@@ -1728,27 +1775,65 @@ FORM create_nf CHANGING cs_data TYPE zsd_br_nfse_data.
         lt_item    TYPE STANDARD TABLE OF bapi_j_1bnflin,
         lt_tax     TYPE STANDARD TABLE OF bapi_j_1bnfstx,
         lt_text    TYPE STANDARD TABLE OF bapi_j_1bnfftx,
+        lt_htext   TYPE STANDARD TABLE OF bapi_j_1bnftextheader,
         lt_return  TYPE STANDARD TABLE OF bapiret2,
-        lv_docnum  TYPE j_1bdocnum.
+        lv_docnum  TYPE j_1bdocnum,
+        lv_nfcheck TYPE c LENGTH 47,
+        ls_nfcheck TYPE bapi_j_1bnfcheck,
+        lv_text    TYPE c LENGTH 150,
+        lv_call_ok TYPE abap_bool VALUE abap_true.
 
   PERFORM build_bapi_header  USING cs_data CHANGING ls_header lt_partner.
   PERFORM build_bapi_item    USING cs_data CHANGING lt_item.
   PERFORM build_bapi_taxes   USING cs_data CHANGING lt_tax.
-  PERFORM build_bapi_texts   USING cs_data CHANGING lt_text.
+  PERFORM build_bapi_texts   USING cs_data CHANGING lt_text lt_htext.
 
-  CALL FUNCTION 'BAPI_J_1B_NF_CREATEFROMDATA'
-    EXPORTING
-      obj_header     = ls_header
-    IMPORTING
-      doc_number     = lv_docnum
-    TABLES
-      obj_partner    = lt_partner
-      obj_item       = lt_item
-      obj_item_tax   = lt_tax
-      obj_header_msg = lt_text
-      return         = lt_return.
+* NF Writer checks (CHECK_NF_BAPI) switched on/off per position.
+* BAPI_J_1BNFCHECK-CHEKCON is CHAR 50: positions 48-50 stay blank.
+  PERFORM build_bapi_nfcheck USING cs_data CHANGING lv_nfcheck.
+  ls_nfcheck-chekcon = lv_nfcheck.
 
-  IF lv_docnum IS NOT INITIAL
+  TRY.
+      CALL FUNCTION 'BAPI_J_1B_NF_CREATEFROMDATA'
+        EXPORTING
+          obj_header     = ls_header
+          nfcheck        = ls_nfcheck
+        IMPORTING
+          e_docnum       = lv_docnum
+        TABLES
+          obj_partner    = lt_partner
+          obj_item       = lt_item
+          obj_item_tax   = lt_tax
+          obj_header_msg = lt_text
+          obj_header_text = lt_htext
+          return         = lt_return
+        EXCEPTIONS
+          error_message  = 1
+          OTHERS         = 2.
+      IF sy-subrc <> 0.
+        lv_call_ok = abap_false.
+        CLEAR lv_docnum.
+        IF sy-msgid IS NOT INITIAL.
+          PERFORM add_log_full USING cs_data-line_id gc_msgty_error sy-msgid sy-msgno
+                                     sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+        ELSE.
+          lv_text = |SY-SUBRC { sy-subrc }|.
+          PERFORM add_log USING cs_data-line_id gc_msgty_error '047'
+                                'BAPI_J_1B_NF_CREATEFROMDATA' lv_text(50) space.
+        ENDIF.
+      ENDIF.
+    CATCH cx_sy_dyn_call_error INTO DATA(lo_call_error).
+*     Wrong interface (parameter unknown, type conflict, ...): no dump
+      lv_call_ok = abap_false.
+      CLEAR lv_docnum.
+      lv_text = lo_call_error->get_text( ).
+      PERFORM add_log_full USING cs_data-line_id gc_msgty_error gc_msgid '047'
+                                 'BAPI_J_1B_NF_CREATEFROMDATA'
+                                 lv_text(50) lv_text+50(50) lv_text+100(50).
+  ENDTRY.
+
+  IF lv_call_ok = abap_true
+     AND lv_docnum IS NOT INITIAL
      AND NOT line_exists( lt_return[ type = 'E' ] )
      AND NOT line_exists( lt_return[ type = 'A' ] ).
     cs_data-status = gc_line_success.
@@ -1799,6 +1884,11 @@ FORM build_bapi_header USING    us_data    TYPE zsd_br_nfse_data
   cs_header-parid  = us_data-kunnr.
   cs_header-partyp = gc_partner_type.
   cs_header-nfnum  = condense( us_data-rps_number ).   " RPS = J_1BNFDOC-NFNUM
+* Service NF (NFS-e) and municipal fiscal document - explicit, as in
+* the service NFs created from SD billing (standard also derives them
+* from the service item TMISS)
+  cs_header-nfesrv    = abap_true.
+  cs_header-municipal = abap_true.
 
   PERFORM get_component USING gs_j1baa 'DOCTYP' CHANGING lv_value.
   PERFORM set_component USING 'DOCTYP' lv_value CHANGING cs_header.
@@ -1846,14 +1936,20 @@ FORM build_bapi_item USING    us_data TYPE zsd_br_nfse_data
   ls_item-netpr  = us_data-service_amount.
   ls_item-netwr  = us_data-service_amount.
   ls_item-werks  = gv_werks.
+  PERFORM set_component USING 'BWKEY' gv_bwkey CHANGING ls_item.
+* Service item (ISS, no ICMS/IPI) and price including ISS - as in the
+* NFs created from SD billing; without INCLTX the ISS was added on top
+* of the service amount (NF total 2100 for a service of 2000)
+  PERFORM set_component USING 'TMISS'  abap_true CHANGING ls_item.
+  PERFORM set_component USING 'INCLTX' abap_true CHANGING ls_item.
 
   PERFORM get_param USING gc_p_cfop gc_col_taker_region us_data-taker_region
                     CHANGING lv_value lv_found.
   PERFORM set_component USING 'CFOP' lv_value CHANGING ls_item.
 
-* Fixed parameters: the parameter name is also the BAPI field name
+* Fixed parameters: the parameter name is also the BAPI field name.
+* TAXLW1 / TAXLW2 (ICMS / IPI law) are not sent: service item (TMISS)
   DATA(lt_fixed) = VALUE gty_fieldname_tab( ( gc_p_itmtyp ) ( gc_p_matuse ) ( gc_p_matorg )
-                                            ( gc_p_taxlw1 ) ( gc_p_taxlw2 )
                                             ( gc_p_taxlw4 ) ( gc_p_taxlw5 ) ).
   LOOP AT lt_fixed INTO DATA(lv_name).
     PERFORM get_param USING lv_name '' gc_wildcard CHANGING lv_value lv_found.
@@ -1892,28 +1988,33 @@ FORM build_bapi_taxes USING    us_data TYPE zsd_br_nfse_data
 
   DATA: lv_taxtyp TYPE string,
         lv_found  TYPE abap_bool,
-        lv_rate   TYPE p LENGTH 8 DECIMALS 4.
+        lv_rate   TYPE p LENGTH 8 DECIMALS 4,
+        ls_tax    TYPE bapi_j_1bnfstx.
 
   IF gv_send_cbs = abap_true.
-    PERFORM append_tax USING us_data-service_amount us_data-cbs_due_amt gc_p_taxtyp_cbs    CHANGING ct_tax.
-    PERFORM append_tax USING us_data-service_amount us_data-ibs_due_amt gc_p_taxtyp_ibs    CHANGING ct_tax.
-    PERFORM append_tax USING us_data-service_amount us_data-cbs_wht_amt gc_p_taxtyp_cbs_wt CHANGING ct_tax.
-    PERFORM append_tax USING us_data-service_amount us_data-ibs_wht_amt gc_p_taxtyp_ibs_wt CHANGING ct_tax.
+    PERFORM append_tax USING us_data-service_amount us_data-cbs_due_amt gc_p_taxtyp_cbs    abap_false CHANGING ct_tax.
+    PERFORM append_tax USING us_data-service_amount us_data-ibs_due_amt gc_p_taxtyp_ibs    abap_false CHANGING ct_tax.
+    PERFORM append_tax USING us_data-service_amount us_data-cbs_wht_amt gc_p_taxtyp_cbs_wt abap_true  CHANGING ct_tax.
+    PERFORM append_tax USING us_data-service_amount us_data-ibs_wht_amt gc_p_taxtyp_ibs_wt abap_true  CHANGING ct_tax.
   ENDIF.
-  PERFORM append_tax USING us_data-service_amount us_data-inss_amt     gc_p_taxtyp_inss CHANGING ct_tax.
-  PERFORM append_tax USING us_data-service_amount us_data-irrf_wht_amt gc_p_taxtyp_irrf CHANGING ct_tax.
-  PERFORM append_tax USING us_data-service_amount us_data-csll_wht_amt gc_p_taxtyp_csll CHANGING ct_tax.
+  PERFORM append_tax USING us_data-service_amount us_data-inss_amt     gc_p_taxtyp_inss abap_true CHANGING ct_tax.
+  PERFORM append_tax USING us_data-service_amount us_data-irrf_wht_amt gc_p_taxtyp_irrf abap_true CHANGING ct_tax.
+  PERFORM append_tax USING us_data-service_amount us_data-csll_wht_amt gc_p_taxtyp_csll abap_true CHANGING ct_tax.
 
 * ISS: tax type by withheld flag, rate from the spreadsheet
   IF us_data-iss_amt > 0.
     PERFORM get_param USING gc_p_taxtyp_iss gc_col_iss_wht us_data-iss_wht_flag
                       CHANGING lv_taxtyp lv_found.
     lv_rate = us_data-iss_rate * 100.
-    APPEND VALUE bapi_j_1bnfstx( itmnum = gc_item_number
-                                 taxtyp = lv_taxtyp
-                                 base   = us_data-service_amount
-                                 rate   = lv_rate
-                                 taxval = us_data-iss_amt ) TO ct_tax.
+    ls_tax = VALUE #( itmnum = gc_item_number
+                      taxtyp = lv_taxtyp
+                      base   = us_data-service_amount
+                      rate   = lv_rate
+                      taxval = us_data-iss_amt ).
+    IF us_data-iss_wht_flag = gc_yes.
+      PERFORM set_withheld CHANGING ls_tax.
+    ENDIF.
+    APPEND ls_tax TO ct_tax.
   ENDIF.
 
 ENDFORM.
@@ -1924,14 +2025,16 @@ ENDFORM.
 * Tax line for one column with a value; the tax type comes from the
 * fixed parameter UV_PARAM. Nothing is added for a zero value.
 *----------------------------------------------------------------------*
-FORM append_tax USING    uv_base   TYPE zsd_br_nfse_service_amount
-                         uv_value  TYPE any
-                         uv_param  TYPE fieldname
-                CHANGING ct_tax    TYPE STANDARD TABLE.
+FORM append_tax USING    uv_base     TYPE zsd_br_nfse_service_amount
+                         uv_value    TYPE any
+                         uv_param    TYPE fieldname
+                         uv_withheld TYPE abap_bool
+                CHANGING ct_tax      TYPE STANDARD TABLE.
 
   DATA: lv_rate   TYPE p LENGTH 8 DECIMALS 4,
         lv_taxtyp TYPE string,
-        lv_found  TYPE abap_bool.
+        lv_found  TYPE abap_bool,
+        ls_tax    TYPE bapi_j_1bnfstx.
 
   IF uv_value <= 0.
     RETURN.
@@ -1940,28 +2043,59 @@ FORM append_tax USING    uv_base   TYPE zsd_br_nfse_service_amount
   IF uv_base > 0.
     lv_rate = uv_value / uv_base * 100.
   ENDIF.
-  APPEND VALUE bapi_j_1bnfstx( itmnum = gc_item_number
-                               taxtyp = lv_taxtyp
-                               base   = uv_base
-                               rate   = lv_rate
-                               taxval = uv_value ) TO ct_tax.
+  ls_tax = VALUE #( itmnum = gc_item_number
+                    taxtyp = lv_taxtyp
+                    base   = uv_base
+                    rate   = lv_rate
+                    taxval = uv_value ).
+  IF uv_withheld = abap_true.
+    PERFORM set_withheld CHANGING ls_tax.
+  ENDIF.
+  APPEND ls_tax TO ct_tax.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SET_WITHHELD
+*&---------------------------------------------------------------------*
+* Withheld tax line: "Withholding Tax" and "Tax Incl. in Net Value"
+* flags, as in the NFs created from SD billing (otherwise the withheld
+* amount of the NF header stays zero). Set only if the fields exist in
+* BAPI_J_1BNFSTX (SET_COMPONENT).
+*----------------------------------------------------------------------*
+FORM set_withheld CHANGING cs_tax TYPE bapi_j_1bnfstx.
+
+  PERFORM set_component USING 'WITHHOLD' abap_true CHANGING cs_tax.
+  PERFORM set_component USING 'TAXINNET' abap_true CHANGING cs_tax.
 
 ENDFORM.
 
 *&---------------------------------------------------------------------*
 *&      Form  BUILD_BAPI_TEXTS
 *&---------------------------------------------------------------------*
-* Service description: "|" and "||" are line breaks in the
-* spreadsheet; each line is then split into 72-character lines without
-* cutting words.
+* Service description (column AH "Discriminacao dos Servicos"): "|"
+* and "||" are line breaks in the spreadsheet; each line is then split
+* without cutting words.
+* Parameter HDR_TEXT_ID filled -> header text of the NF (OBJ_HEADER_TEXT,
+*   shown in J1B3N), text ID from the parameter, 132-character lines.
+* Parameter HDR_TEXT_ID empty  -> header message (OBJ_HEADER_MSG),
+*   72-character lines (behaviour up to v0.5).
 *----------------------------------------------------------------------*
-FORM build_bapi_texts USING    us_data TYPE zsd_br_nfse_data
-                      CHANGING ct_text TYPE STANDARD TABLE.
+FORM build_bapi_texts USING    us_data  TYPE zsd_br_nfse_data
+                      CHANGING ct_text  TYPE STANDARD TABLE
+                               ct_htext TYPE STANDARD TABLE.
 
-  DATA: lt_parts TYPE string_table,
-        lt_words TYPE string_table,
-        lv_line  TYPE string,
-        lv_seq   TYPE i.
+  DATA: lt_parts   TYPE string_table,
+        lt_words   TYPE string_table,
+        lt_lines   TYPE string_table,
+        lv_line    TYPE string,
+        lv_text_id TYPE string,
+        lv_width   TYPE i,
+        lv_seq     TYPE i.
+
+  PERFORM get_param_text USING gc_p_hdr_text_id '' CHANGING lv_text_id.
+  lv_width = COND #( WHEN lv_text_id IS INITIAL THEN gc_text_width
+                     ELSE gc_hdr_text_width ).
 
   SPLIT us_data-service_descr AT '|' INTO TABLE lt_parts.
 
@@ -1973,19 +2107,152 @@ FORM build_bapi_texts USING    us_data TYPE zsd_br_nfse_data
     LOOP AT lt_words INTO DATA(lv_word).
       IF lv_line IS INITIAL.
         lv_line = lv_word.
-      ELSEIF strlen( lv_line ) + 1 + strlen( lv_word ) <= gc_text_width.
+      ELSEIF strlen( lv_line ) + 1 + strlen( lv_word ) <= lv_width.
         lv_line = |{ lv_line } { lv_word }|.
       ELSE.
-        lv_seq = lv_seq + 1.
-        APPEND VALUE bapi_j_1bnfftx( seqnum = lv_seq linnum = 1 message = lv_line ) TO ct_text.
+        APPEND lv_line TO lt_lines.
         lv_line = lv_word.
       ENDIF.
     ENDLOOP.
     IF lv_line IS NOT INITIAL.
-      lv_seq = lv_seq + 1.
-      APPEND VALUE bapi_j_1bnfftx( seqnum = lv_seq linnum = 1 message = lv_line ) TO ct_text.
+      APPEND lv_line TO lt_lines.
     ENDIF.
   ENDLOOP.
+
+  LOOP AT lt_lines INTO lv_line.
+    IF lv_text_id IS INITIAL.
+      lv_seq = lv_seq + 1.
+      APPEND VALUE bapi_j_1bnfftx( seqnum = lv_seq linnum = 1 message = lv_line ) TO ct_text.
+    ELSE.
+*     "*" = new paragraph: one line of the description per paragraph
+      APPEND VALUE bapi_j_1bnftextheader( text_id   = lv_text_id
+                                          text_form = '*'
+                                          text_line = lv_line ) TO ct_htext.
+    ENDIF.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  BUILD_BAPI_NFCHECK
+*&---------------------------------------------------------------------*
+* Builds the CHECKSTRING used by the NF Writer checks (standard FORM
+* CHECK_NF_BAPI). Each position switches one standard check on ('X')
+* or off (' '). All checks are on except 13, 27 and 28 (not relevant
+* for a service item: material group, ICMS/IPI tax situation, NCM -
+* errors 8B 150 / 8B 151 in the test of 06.11.2026). To switch a check
+* on or off, change its VALUE ('X' / space). Positions are written one by one (offset), so a check that
+* is off never shifts the following ones.
+* Checks 1-4 only give a warning (SUBRC 4); 5 onwards stop the NF
+* (SUBRC 8). Checks 40-43 only run for NF-e (header NFE = 'X').
+* US_DATA: line being created - reserved for rules per line.
+*----------------------------------------------------------------------*
+FORM build_bapi_nfcheck USING    us_data    TYPE zsd_br_nfse_data
+                        CHANGING cv_nfcheck TYPE any.
+
+  CONSTANTS lc_len TYPE i VALUE 47.
+
+  DATA: lv_check TYPE c LENGTH lc_len,
+*       --- Warning only (SUBRC 4) ---
+        lv_c01 TYPE c LENGTH 1 VALUE 'X', " 01 Item types (manual entry only) - check commented out in the standard, no effect
+        lv_c02 TYPE c LENGTH 1 VALUE 'X', " 02 NF form (header FORM) exists in J_1BAQ
+        lv_c03 TYPE c LENGTH 1 VALUE 'X', " 03 NF type + model exist in J_1BAA
+        lv_c04 TYPE c LENGTH 1 VALUE 'X', " 04 Currency (WAERK) is BRL - warning 8B 681
+*       --- Error, NF is not created (SUBRC 8) ---
+        lv_c05 TYPE c LENGTH 1 VALUE 'X', " 05 NF type exists in J_1BAA and its doc. type matches header DOCTYP
+        lv_c06 TYPE c LENGTH 1 VALUE 'X', " 06 Company code exists in T001
+        lv_c07 TYPE c LENGTH 1 VALUE 'X', " 07 Business place exists for the company code (J_1BBRANCH)
+        lv_c08 TYPE c LENGTH 1 VALUE 'X', " 08 Header partner and partner table exist (J_1B_NF_PARTNER_READ)
+        lv_c09 TYPE c LENGTH 1 VALUE 'X', " 09 Item type filled and existing in J_1BITEMTYPES (non-ISS items)
+        lv_c10 TYPE c LENGTH 1 VALUE 'X', " 10 Material of the item exists in MARA
+        lv_c11 TYPE c LENGTH 1 VALUE 'X', " 11 Plant of the item exists in T001W
+        lv_c12 TYPE c LENGTH 1 VALUE 'X', " 12 Item with plant must have a material number
+        lv_c13 TYPE c LENGTH 1 VALUE ' ', " 13 OFF: material group (MATKL) filled on every item
+        lv_c14 TYPE c LENGTH 1 VALUE 'X', " 14 Unit of measure exists in T006
+        lv_c15 TYPE c LENGTH 1 VALUE 'X', " 15 NCM (NBM) exists in T604F (not for doc. type R)
+        lv_c16 TYPE c LENGTH 1 VALUE 'X', " 16 Business place / company code filled
+        lv_c17 TYPE c LENGTH 1 VALUE 'X', " 17 NF type, doc. type and direction filled
+        lv_c18 TYPE c LENGTH 1 VALUE 'X', " 18 Partner function, partner ID and partner type filled
+        lv_c19 TYPE c LENGTH 1 VALUE 'X', " 19 Posting date and document date filled
+        lv_c20 TYPE c LENGTH 1 VALUE 'X', " 20 Currency (WAERK) filled
+        lv_c21 TYPE c LENGTH 1 VALUE 'X', " 21 At least one item exists
+        lv_c22 TYPE c LENGTH 1 VALUE 'X', " 22 Material usage (MATUSE) filled
+        lv_c23 TYPE c LENGTH 1 VALUE 'X', " 23 CFOP filled
+        lv_c24 TYPE c LENGTH 1 VALUE 'X', " 24 Document reference filled for item types that require it
+        lv_c25 TYPE c LENGTH 1 VALUE 'X', " 25 First digit of the CFOP equal on all items
+        lv_c26 TYPE c LENGTH 1 VALUE 'X', " 26 First digit of the CFOP fits the direction (in/out)
+        lv_c27 TYPE c LENGTH 1 VALUE ' ', " 27 OFF: ICMS/IPI tax law, tax situation, mat. origin filled
+        lv_c28 TYPE c LENGTH 1 VALUE ' ', " 28 OFF: NCM filled
+        lv_c29 TYPE c LENGTH 1 VALUE 'X', " 29 At least one tax line exists
+        lv_c30 TYPE c LENGTH 1 VALUE 'X', " 30 NF form fits legal requirements (size of items / texts)
+        lv_c31 TYPE c LENGTH 1 VALUE 'X', " 31 Document type exists in J_1BDOCTYPES
+        lv_c32 TYPE c LENGTH 1 VALUE 'X', " 32 Direction is 1, 2, 3 or 4
+        lv_c33 TYPE c LENGTH 1 VALUE 'X', " 33 Without MANUAL = 'X', every item needs a reference key (REFKEY)
+        lv_c34 TYPE c LENGTH 1 VALUE 'X', " 34 Valuation type exists in MBEW (items with BWTAR and material)
+        lv_c35 TYPE c LENGTH 1 VALUE 'X', " 35 Plant exists in T001W and its valuation area equals item BWKEY
+        lv_c36 TYPE c LENGTH 1 VALUE 'X', " 36 Valuation area exists in T001K
+        lv_c37 TYPE c LENGTH 1 VALUE 'X', " 37 Tax types of the tax lines exist in J_1BAJ
+        lv_c38 TYPE c LENGTH 1 VALUE 'X', " 38 Posting period open (only doc. type 5 - cancellation)
+        lv_c39 TYPE c LENGTH 1 VALUE 'X', " 39 No negative tax rates
+        lv_c40 TYPE c LENGTH 1 VALUE 'X', " 40 NF-e only: NF-e number filled when a doc. status is set
+        lv_c41 TYPE c LENGTH 1 VALUE 'X', " 41 NF-e only: authorization protocol filled when a doc. status is set
+        lv_c42 TYPE c LENGTH 1 VALUE 'X', " 42 NF-e only: XML version filled
+        lv_c43 TYPE c LENGTH 1 VALUE 'X', " 43 NF-e only: SEFAZ status code filled when a doc. status is set
+        lv_c44 TYPE c LENGTH 1 VALUE 'X', " 44 Not read - 4-decimal tax rate checks always run in the standard
+        lv_c45 TYPE c LENGTH 1 VALUE 'X', " 45 Not read - PAUTA_BASE / UNIT checks always run in the standard
+        lv_c46 TYPE c LENGTH 1 VALUE 'X', " 46 Item tax situation (TAXSITUATION / TAXSITUATIONREG) exists
+        lv_c47 TYPE c LENGTH 1 VALUE 'X'. " 47 Item tax situation IS (TAXSITUATIONIS) exists
+
+  CLEAR lv_check.
+  lv_check+0(1)  = lv_c01.
+  lv_check+1(1)  = lv_c02.
+  lv_check+2(1)  = lv_c03.
+  lv_check+3(1)  = lv_c04.
+  lv_check+4(1)  = lv_c05.
+  lv_check+5(1)  = lv_c06.
+  lv_check+6(1)  = lv_c07.
+  lv_check+7(1)  = lv_c08.
+  lv_check+8(1)  = lv_c09.
+  lv_check+9(1)  = lv_c10.
+  lv_check+10(1) = lv_c11.
+  lv_check+11(1) = lv_c12.
+  lv_check+12(1) = lv_c13.
+  lv_check+13(1) = lv_c14.
+  lv_check+14(1) = lv_c15.
+  lv_check+15(1) = lv_c16.
+  lv_check+16(1) = lv_c17.
+  lv_check+17(1) = lv_c18.
+  lv_check+18(1) = lv_c19.
+  lv_check+19(1) = lv_c20.
+  lv_check+20(1) = lv_c21.
+  lv_check+21(1) = lv_c22.
+  lv_check+22(1) = lv_c23.
+  lv_check+23(1) = lv_c24.
+  lv_check+24(1) = lv_c25.
+  lv_check+25(1) = lv_c26.
+  lv_check+26(1) = lv_c27.
+  lv_check+27(1) = lv_c28.
+  lv_check+28(1) = lv_c29.
+  lv_check+29(1) = lv_c30.
+  lv_check+30(1) = lv_c31.
+  lv_check+31(1) = lv_c32.
+  lv_check+32(1) = lv_c33.
+  lv_check+33(1) = lv_c34.
+  lv_check+34(1) = lv_c35.
+  lv_check+35(1) = lv_c36.
+  lv_check+36(1) = lv_c37.
+  lv_check+37(1) = lv_c38.
+  lv_check+38(1) = lv_c39.
+  lv_check+39(1) = lv_c40.
+  lv_check+40(1) = lv_c41.
+  lv_check+41(1) = lv_c42.
+  lv_check+42(1) = lv_c43.
+  lv_check+43(1) = lv_c44.
+  lv_check+44(1) = lv_c45.
+  lv_check+45(1) = lv_c46.
+  lv_check+46(1) = lv_c47.
+
+  cv_nfcheck = lv_check.
 
 ENDFORM.
 

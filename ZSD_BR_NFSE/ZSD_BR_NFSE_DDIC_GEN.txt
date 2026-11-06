@@ -32,6 +32,9 @@
 * Change history                                                      *
 * 12.10.2026  Renato Santos                                           *
 * Initial version.                                                    *
+* 06.11.2026  Alexandre Marcondes Silva                               *
+* v0.5 - ZSD_BR_NFSE_PARM with delivery class A; maintenance flag     *
+*   follows the change-logging flag. New message 047.                 *
 *---------------------------------------------------------------------*
 REPORT zsd_br_nfse_ddic_gen.
 
@@ -306,7 +309,7 @@ FORM fill_definitions.
     ( name = 'ZSD_BR_NFSE_FILE' text = 'NFS-e upload: file header' contflag = 'A' tabart = 'APPL1' tabkat = '1' logging = ' ' )
     ( name = 'ZSD_BR_NFSE_DATA' text = 'NFS-e upload: spreadsheet lines' contflag = 'A' tabart = 'APPL1' tabkat = '2' logging = ' ' )
     ( name = 'ZSD_BR_NFSE_LOG' text = 'NFS-e upload: messages' contflag = 'A' tabart = 'APPL1' tabkat = '2' logging = ' ' )
-    ( name = 'ZSD_BR_NFSE_PARM' text = 'NFS-e upload: parameters' contflag = 'C' tabart = 'APPL2' tabkat = '0' logging = 'X' )
+    ( name = 'ZSD_BR_NFSE_PARM' text = 'NFS-e upload: parameters' contflag = 'A' tabart = 'APPL2' tabkat = '0' logging = 'X' )
   ).
   gt_field = VALUE #(
     ( tabname = 'ZSD_BR_NFSE_FILE' fieldname = 'MANDT' key = 'X' rollname = 'MANDT' )
@@ -460,6 +463,7 @@ FORM fill_definitions.
     ( msgnr = '044' text = 'Simulation: &1 files, &2 lines and &3 messages would be deleted' )
     ( msgnr = '045' text = 'File &1 has no lines to reprocess' )
     ( msgnr = '046' text = 'Reprocessing started by &1' )
+    ( msgnr = '047' text = 'Error calling &1: &2&3&4' )
   ).
 
 ENDFORM.
@@ -618,8 +622,9 @@ ENDFORM.
 *&      Form  PROCESS_TABLES
 *&---------------------------------------------------------------------*
 * Transparent, client-dependent tables. Amount fields refer to
-* ZSD_BR_NFSE_DATA-WAERS. ZSD_BR_NFSE_PARM is customizing (class C),
-* maintainable and with change logging.
+* ZSD_BR_NFSE_DATA-WAERS. ZSD_BR_NFSE_PARM is an application table
+* (delivery class A - maintained directly in each client, no transport
+* request), maintainable and with change logging.
 *----------------------------------------------------------------------*
 FORM process_tables.
 
@@ -650,7 +655,9 @@ FORM process_tables.
     ls_dd02v-clidep     = abap_true.
     ls_dd02v-ddtext     = ls_table-text.
     ls_dd02v-contflag   = ls_table-contflag.
-    ls_dd02v-mainflag   = COND #( WHEN ls_table-contflag = 'C' THEN 'X' ELSE ' ' ).
+*   Only the parameter table (the one with change logging) is maintained
+*   in the dialog; the log tables keep restricted maintenance
+    ls_dd02v-mainflag   = COND #( WHEN ls_table-logging = abap_true THEN 'X' ELSE ' ' ).
     ls_dd02v-exclass    = '1'.                          " cannot be enhanced
 
     ls_dd09l-tabname  = ls_table-name.
