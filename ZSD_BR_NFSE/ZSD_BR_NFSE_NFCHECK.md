@@ -98,7 +98,7 @@ Posição = offset no check string (`checkstring+N(1)`). Classe `8B` = mensagens
 
 | # | Ponto | Status |
 |---|---|---|
-| 1 | O check string é passado à `BAPI_J_1B_NF_CREATEFROMDATA` no `FORM CREATE_NF`, parâmetro `NFCHECK` (`LIKE BAPI_J_1BNFCHECK`, opcional), preenchido inteiro com o check string. Interface conferida no sistema em 06/11/2026: `NFCHECK`, `E_DOCNUM`, `OBJ_PARTNER`, `OBJ_ITEM`, `OBJ_ITEM_TAX`, `OBJ_HEADER_MSG` e `RETURN` existem. Falta só conferir na SE11 o tamanho da `BAPI_J_1BNFCHECK`: com menos de 47 posições, os últimos checks ficam desligados. | ✅ interface · ⏳ tamanho da estrutura |
+| 1 | O check string é passado à `BAPI_J_1B_NF_CREATEFROMDATA` no `FORM CREATE_NF`, parâmetro `NFCHECK` (`LIKE BAPI_J_1BNFCHECK`, opcional), campo `CHEKCON`. Conferido no sistema em 06/11/2026: interface da BAPI (`NFCHECK`, `E_DOCNUM`, `OBJ_PARTNER`, `OBJ_ITEM`, `OBJ_ITEM_TAX`, `OBJ_HEADER_MSG`, `RETURN`) e estrutura `BAPI_J_1BNFCHECK` com um único campo `CHEKCON` (`J_1BCHEKCON`, CHAR 50) – as 47 posições cabem; 48 a 50 ficam em branco. | ✅ |
 | 2 | Checks 13 (grupo de mercadorias), 27 (ICMS/IPI e origem) e 28 (NCM) **desligados** – não se aplicam ao item de serviço (teste de 06/11/2026: 8B 150 e 8B 151). Os checks 15 (NCM existe na T604F, só quando o NCM vem preenchido) e 33 (o programa envia `MANUAL = 'X'`) continuam ligados. | ✅ |
 | 3 | Checks 40–43 só valem para NF-e; para NFS-e não têm efeito, mas foram mantidos ligados. | Informativo |
 | 4 | Check 01 e posições 44/45 ficam com `X` só para manter o tamanho de 47 posições. | Informativo |

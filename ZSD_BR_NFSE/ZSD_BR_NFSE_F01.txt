@@ -1758,10 +1758,9 @@ FORM create_nf CHANGING cs_data TYPE zsd_br_nfse_data.
   PERFORM build_bapi_texts   USING cs_data CHANGING lt_text.
 
 * NF Writer checks (CHECK_NF_BAPI) switched on/off per position.
-* BAPI_J_1BNFCHECK is a flat character structure (check string), so the
-* string is moved as a whole - no dependency on the component name.
+* BAPI_J_1BNFCHECK-CHEKCON is CHAR 50: positions 48-50 stay blank.
   PERFORM build_bapi_nfcheck USING cs_data CHANGING lv_nfcheck.
-  ls_nfcheck = lv_nfcheck.
+  ls_nfcheck-chekcon = lv_nfcheck.
 
   TRY.
       CALL FUNCTION 'BAPI_J_1B_NF_CREATEFROMDATA'
