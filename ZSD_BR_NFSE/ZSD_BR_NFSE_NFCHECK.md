@@ -98,7 +98,7 @@ Posição = offset no check string (`checkstring+N(1)`). Classe `8B` = mensagens
 
 | # | Ponto | Status |
 |---|---|---|
-| 1 | **O check string ainda não é usado na criação da NF.** A `BAPI_J_1B_NF_CREATEFROMDATA`, como é chamada hoje no `FORM CREATE_NF`, não recebe check string. Falta definir onde o `lv_nfcheck` será passado. | ⏳ desenvolvimento |
+| 1 | O check string é passado à `BAPI_J_1B_NF_CREATEFROMDATA` no `FORM CREATE_NF`, parâmetro `NFCHECK` (estrutura `BAPI_J_1BNFCHECK`, preenchida inteira com o check string). **Confirmar na SE37** o nome do parâmetro e na SE11 o tamanho da estrutura: se ela tiver menos de 47 posições, os últimos checks ficam desligados. Se o parâmetro não existir, a linha dá erro 047 (sem dump). | ⏳ confirmar no sistema |
 | 2 | Checks 13 (grupo de mercadorias), 27 (ICMS/IPI e origem) e 28 (NCM) **desligados** – não se aplicam ao item de serviço (teste de 06/11/2026: 8B 150 e 8B 151). Os checks 15 (NCM existe na T604F, só quando o NCM vem preenchido) e 33 (o programa envia `MANUAL = 'X'`) continuam ligados. | ✅ |
 | 3 | Checks 40–43 só valem para NF-e; para NFS-e não têm efeito, mas foram mantidos ligados. | Informativo |
 | 4 | Check 01 e posições 44/45 ficam com `X` só para manter o tamanho de 47 posições. | Informativo |

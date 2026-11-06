@@ -1727,7 +1727,8 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 *&      Form  CREATE_NF
 *&---------------------------------------------------------------------*
-* One NF Writer per line:
+* One NF Writer per line (checks of the standard switched by the check
+* string of BUILD_BAPI_NFCHECK, parameter NFCHECK):
 *   success -> DATA: S + DOCNUM, LOG 022, then BAPI_TRANSACTION_COMMIT
 *              (same LUW - the NF never exists without its log)
 *   error   -> BAPI_TRANSACTION_ROLLBACK, DATA: E, BAPI messages in
@@ -1746,6 +1747,8 @@ FORM create_nf CHANGING cs_data TYPE zsd_br_nfse_data.
         lt_text    TYPE STANDARD TABLE OF bapi_j_1bnfftx,
         lt_return  TYPE STANDARD TABLE OF bapiret2,
         lv_docnum  TYPE j_1bdocnum,
+        lv_nfcheck TYPE c LENGTH 47,
+        ls_nfcheck TYPE bapi_j_1bnfcheck,
         lv_text    TYPE c LENGTH 150,
         lv_call_ok TYPE abap_bool VALUE abap_true.
 
@@ -1754,10 +1757,17 @@ FORM create_nf CHANGING cs_data TYPE zsd_br_nfse_data.
   PERFORM build_bapi_taxes   USING cs_data CHANGING lt_tax.
   PERFORM build_bapi_texts   USING cs_data CHANGING lt_text.
 
+* NF Writer checks (CHECK_NF_BAPI) switched on/off per position.
+* BAPI_J_1BNFCHECK is a flat character structure (check string), so the
+* string is moved as a whole - no dependency on the component name.
+  PERFORM build_bapi_nfcheck USING cs_data CHANGING lv_nfcheck.
+  ls_nfcheck = lv_nfcheck.
+
   TRY.
       CALL FUNCTION 'BAPI_J_1B_NF_CREATEFROMDATA'
         EXPORTING
           obj_header     = ls_header
+          nfcheck        = ls_nfcheck
         IMPORTING
           e_docnum       = lv_docnum
         TABLES
