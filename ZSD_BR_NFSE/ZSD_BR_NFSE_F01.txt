@@ -2022,6 +2022,127 @@ FORM build_bapi_texts USING    us_data TYPE zsd_br_nfse_data
 ENDFORM.
 
 *&---------------------------------------------------------------------*
+*&      Form  BUILD_BAPI_NFCHECK
+*&---------------------------------------------------------------------*
+* Builds the CHECKSTRING used by the NF Writer checks (standard FORM
+* CHECK_NF_BAPI). Each position switches one standard check on ('X')
+* or off (' '). All checks are on; to switch one off, change its VALUE
+* to space. Positions are written one by one (offset), so a check that
+* is off never shifts the following ones.
+* Checks 1-4 only give a warning (SUBRC 4); 5 onwards stop the NF
+* (SUBRC 8). Checks 40-43 only run for NF-e (header NFE = 'X').
+* US_DATA: line being created - reserved for rules per line.
+*----------------------------------------------------------------------*
+FORM build_bapi_nfcheck USING    us_data    TYPE zsd_br_nfse_data
+                        CHANGING cv_nfcheck TYPE any.
+
+  CONSTANTS lc_len TYPE i VALUE 47.
+
+  DATA: lv_check TYPE c LENGTH lc_len,
+*       --- Warning only (SUBRC 4) ---
+        lv_c01 TYPE c LENGTH 1 VALUE 'X', " 01 Item types (manual entry only) - check commented out in the standard, no effect
+        lv_c02 TYPE c LENGTH 1 VALUE 'X', " 02 NF form (header FORM) exists in J_1BAQ
+        lv_c03 TYPE c LENGTH 1 VALUE 'X', " 03 NF type + model exist in J_1BAA
+        lv_c04 TYPE c LENGTH 1 VALUE 'X', " 04 Currency (WAERK) is BRL - warning 8B 681
+*       --- Error, NF is not created (SUBRC 8) ---
+        lv_c05 TYPE c LENGTH 1 VALUE 'X', " 05 NF type exists in J_1BAA and its doc. type matches header DOCTYP
+        lv_c06 TYPE c LENGTH 1 VALUE 'X', " 06 Company code exists in T001
+        lv_c07 TYPE c LENGTH 1 VALUE 'X', " 07 Business place exists for the company code (J_1BBRANCH)
+        lv_c08 TYPE c LENGTH 1 VALUE 'X', " 08 Header partner and partner table exist (J_1B_NF_PARTNER_READ)
+        lv_c09 TYPE c LENGTH 1 VALUE 'X', " 09 Item type filled and existing in J_1BITEMTYPES (non-ISS items)
+        lv_c10 TYPE c LENGTH 1 VALUE 'X', " 10 Material of the item exists in MARA
+        lv_c11 TYPE c LENGTH 1 VALUE 'X', " 11 Plant of the item exists in T001W
+        lv_c12 TYPE c LENGTH 1 VALUE 'X', " 12 Item with plant must have a material number
+        lv_c13 TYPE c LENGTH 1 VALUE 'X', " 13 Material group (MATKL) filled on every item
+        lv_c14 TYPE c LENGTH 1 VALUE 'X', " 14 Unit of measure exists in T006
+        lv_c15 TYPE c LENGTH 1 VALUE 'X', " 15 NCM (NBM) exists in T604F (not for doc. type R)
+        lv_c16 TYPE c LENGTH 1 VALUE 'X', " 16 Business place / company code filled
+        lv_c17 TYPE c LENGTH 1 VALUE 'X', " 17 NF type, doc. type and direction filled
+        lv_c18 TYPE c LENGTH 1 VALUE 'X', " 18 Partner function, partner ID and partner type filled
+        lv_c19 TYPE c LENGTH 1 VALUE 'X', " 19 Posting date and document date filled
+        lv_c20 TYPE c LENGTH 1 VALUE 'X', " 20 Currency (WAERK) filled
+        lv_c21 TYPE c LENGTH 1 VALUE 'X', " 21 At least one item exists
+        lv_c22 TYPE c LENGTH 1 VALUE 'X', " 22 Material usage (MATUSE) filled
+        lv_c23 TYPE c LENGTH 1 VALUE 'X', " 23 CFOP filled
+        lv_c24 TYPE c LENGTH 1 VALUE 'X', " 24 Document reference filled for item types that require it
+        lv_c25 TYPE c LENGTH 1 VALUE 'X', " 25 First digit of the CFOP equal on all items
+        lv_c26 TYPE c LENGTH 1 VALUE 'X', " 26 First digit of the CFOP fits the direction (in/out)
+        lv_c27 TYPE c LENGTH 1 VALUE 'X', " 27 ICMS/IPI tax law, tax situation and material origin filled
+        lv_c28 TYPE c LENGTH 1 VALUE 'X', " 28 NCM filled
+        lv_c29 TYPE c LENGTH 1 VALUE 'X', " 29 At least one tax line exists
+        lv_c30 TYPE c LENGTH 1 VALUE 'X', " 30 NF form fits legal requirements (size of items / texts)
+        lv_c31 TYPE c LENGTH 1 VALUE 'X', " 31 Document type exists in J_1BDOCTYPES
+        lv_c32 TYPE c LENGTH 1 VALUE 'X', " 32 Direction is 1, 2, 3 or 4
+        lv_c33 TYPE c LENGTH 1 VALUE 'X', " 33 Without MANUAL = 'X', every item needs a reference key (REFKEY)
+        lv_c34 TYPE c LENGTH 1 VALUE 'X', " 34 Valuation type exists in MBEW (items with BWTAR and material)
+        lv_c35 TYPE c LENGTH 1 VALUE 'X', " 35 Plant exists in T001W and its valuation area equals item BWKEY
+        lv_c36 TYPE c LENGTH 1 VALUE 'X', " 36 Valuation area exists in T001K
+        lv_c37 TYPE c LENGTH 1 VALUE 'X', " 37 Tax types of the tax lines exist in J_1BAJ
+        lv_c38 TYPE c LENGTH 1 VALUE 'X', " 38 Posting period open (only doc. type 5 - cancellation)
+        lv_c39 TYPE c LENGTH 1 VALUE 'X', " 39 No negative tax rates
+        lv_c40 TYPE c LENGTH 1 VALUE 'X', " 40 NF-e only: NF-e number filled when a doc. status is set
+        lv_c41 TYPE c LENGTH 1 VALUE 'X', " 41 NF-e only: authorization protocol filled when a doc. status is set
+        lv_c42 TYPE c LENGTH 1 VALUE 'X', " 42 NF-e only: XML version filled
+        lv_c43 TYPE c LENGTH 1 VALUE 'X', " 43 NF-e only: SEFAZ status code filled when a doc. status is set
+        lv_c44 TYPE c LENGTH 1 VALUE 'X', " 44 Not read - 4-decimal tax rate checks always run in the standard
+        lv_c45 TYPE c LENGTH 1 VALUE 'X', " 45 Not read - PAUTA_BASE / UNIT checks always run in the standard
+        lv_c46 TYPE c LENGTH 1 VALUE 'X', " 46 Item tax situation (TAXSITUATION / TAXSITUATIONREG) exists
+        lv_c47 TYPE c LENGTH 1 VALUE 'X'. " 47 Item tax situation IS (TAXSITUATIONIS) exists
+
+  CLEAR lv_check.
+  lv_check+0(1)  = lv_c01.
+  lv_check+1(1)  = lv_c02.
+  lv_check+2(1)  = lv_c03.
+  lv_check+3(1)  = lv_c04.
+  lv_check+4(1)  = lv_c05.
+  lv_check+5(1)  = lv_c06.
+  lv_check+6(1)  = lv_c07.
+  lv_check+7(1)  = lv_c08.
+  lv_check+8(1)  = lv_c09.
+  lv_check+9(1)  = lv_c10.
+  lv_check+10(1) = lv_c11.
+  lv_check+11(1) = lv_c12.
+  lv_check+12(1) = lv_c13.
+  lv_check+13(1) = lv_c14.
+  lv_check+14(1) = lv_c15.
+  lv_check+15(1) = lv_c16.
+  lv_check+16(1) = lv_c17.
+  lv_check+17(1) = lv_c18.
+  lv_check+18(1) = lv_c19.
+  lv_check+19(1) = lv_c20.
+  lv_check+20(1) = lv_c21.
+  lv_check+21(1) = lv_c22.
+  lv_check+22(1) = lv_c23.
+  lv_check+23(1) = lv_c24.
+  lv_check+24(1) = lv_c25.
+  lv_check+25(1) = lv_c26.
+  lv_check+26(1) = lv_c27.
+  lv_check+27(1) = lv_c28.
+  lv_check+28(1) = lv_c29.
+  lv_check+29(1) = lv_c30.
+  lv_check+30(1) = lv_c31.
+  lv_check+31(1) = lv_c32.
+  lv_check+32(1) = lv_c33.
+  lv_check+33(1) = lv_c34.
+  lv_check+34(1) = lv_c35.
+  lv_check+35(1) = lv_c36.
+  lv_check+36(1) = lv_c37.
+  lv_check+37(1) = lv_c38.
+  lv_check+38(1) = lv_c39.
+  lv_check+39(1) = lv_c40.
+  lv_check+40(1) = lv_c41.
+  lv_check+41(1) = lv_c42.
+  lv_check+42(1) = lv_c43.
+  lv_check+43(1) = lv_c44.
+  lv_check+44(1) = lv_c45.
+  lv_check+45(1) = lv_c46.
+  lv_check+46(1) = lv_c47.
+
+  cv_nfcheck = lv_check.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
 *&      Form  UPDATE_FILE_STATUS
 *&---------------------------------------------------------------------*
 * S = every line S (or V in "Validate only"), E = no line S/V or the
