@@ -13,6 +13,7 @@ Testes de 06.11.2026 (empresa 5596, local de negócio 0001, tipo de NF Z2, clien
 | **226744** (referência) | 02.11 (SD) | – | `EXPORT_20261106_133016.xlsx` | `EXPORT_20261106_133131.xlsx` | `EXPORT_20261106_133418.xlsx` | NF de serviço **correta** criada pelo faturamento SD (empresa 5590) |
 | 226756 | 06.11 16:50 | 0.5 + item de serviço | `EXPORT_20261106_165420.xlsx` | `EXPORT_20261106_170353.xlsx` | – | Alterada manualmente às 16:52 (CFOP 5933/AA) – não usar como evidência do programa |
 | **226758** | 06.11 17:29 | 0.5 final | `EXPORT_20261106_173216.xlsx` | `EXPORT_20261106_173304.xlsx` | `EXPORT_20261106_173356.xlsx` | Criada pelo programa, sem alteração posterior |
+| **226759** / **226761** | 06.11 17:52 / 19:17 | 0.6 (CFOP_10) | `EXPORT_20261106_195409.xlsx` | `EXPORT_20261106_195456.xlsx` | `EXPORT_20261106_195524.xlsx` | Criadas pelo programa; parâmetro `TAXLW3` = I02 |
 
 ## 2. Evidência por solução
 
@@ -96,20 +97,32 @@ A testar: Validate only com parâmetro faltando → 025 tipo W, linha com status
 
 | Campo | NF do SD 226744 | Antes – 226758 | Depois |
 |---|---|---|---|
-| CFOP (`J_1BNFLIN`) | 6933/AA | **593/3A** ❌ (parâmetro 5933AA, campo `CFOP` antigo CHAR 5) | a testar – esperado **5933/AA** |
-| Operation Nature (`J_1BNFDOC`) | Prestação de serviço tributado pelo ISSQN | **vazia** ❌ | a testar – esperado "Prestação de serviço tributado pelo ISSQN" |
+| CFOP (`J_1BNFLIN`) | 6933/AA | **593/3A** ❌ (parâmetro 5933AA, campo `CFOP` antigo CHAR 5) | **5933/AA** ✅ (226759, 226761) |
+| Operation Nature (`J_1BNFDOC`) | Prestação de serviço tributado pelo ISSQN | **vazia** ❌ | **Prestação de serviço tributado pelo ISSQN** ✅ (226759, 226761) |
 
-Arquivos: `EXPORT_20261106_173216.xlsx`, `EXPORT_20261106_173304.xlsx`.
+Arquivos: antes `EXPORT_20261106_173216.xlsx`, `EXPORT_20261106_173304.xlsx`; depois `EXPORT_20261106_195409.xlsx`, `EXPORT_20261106_195456.xlsx`.
 
-## 3. Pendências de teste
+## 3. Encerramento dos testes (06.11.2026)
 
-| Solução | Teste |
+Testes encerrados com as NFs 226758 (v0.5), 226759 e 226761 (v0.6). Resultado:
+
+| Solução | Resultado |
 |---|---|
-| #9 | Texto de cabeçalho na J1B3N (depende de `HDR_TEXT_ID`) |
-| #12 | Classe de entrega A / manutenção sem transporte |
-| #13 | Validate only × execução real para 023/025 |
-| #14 | Nova NF com CFOP 5933/AA e natureza da operação |
-| #4 (PR #3) | Simulação da BAPI no Validate only |
-| Parâmetros | Lei ISS `I01` (`TAXLW3`) – 226758 ainda com `ISS` |
+| #5, #6, #7, #8, #10, #11 | ✅ Confirmadas |
+| #14 CFOP | ✅ Confirmada – 226759 / 226761: CFOP 5933/AA e natureza da operação preenchida |
+| #9 texto de cabeçalho | ⚪ Não testado – depende de `HDR_TEXT_ID` (OT7) |
+| #12 classe de entrega A | ⚪ Não testado (configuração DDIC) |
+| #13 023/025 como aviso | ⚪ Não testado (Validate only) |
+| #4 simulação no Validate only (PR #3, v0.7) | ⚪ Não testado – v0.7 ainda não ativada no sistema (226759/226761 sem série 1, descrição em EN e sem código de recolhimento) |
 
-As NFs de teste (226751–226753, 226756, 226758) devem ser estornadas antes de qualquer envio à Prefeitura (J1BNFE).
+Observações dos últimos testes (para o fiscal):
+
+| Campo | NF do SD 226744 | 226759 / 226761 |
+|---|---|---|
+| Lei ISS / situação tributária ISS | I01 / T | **I02 / A** (parâmetro `TAXLW3` = I02) |
+| Tipo de imposto do ISS | ISSA (ISSP, domicílio SP 3550308) | ISSE (ISSS) |
+| Código de recolhimento das retenções | 5952 / 1708 | vazio (v0.7 / parâmetro `COLLCODE`) |
+| Série | 1 | vazia (v0.7 / parâmetro `NF_SERIES`) |
+| Descrição do material | Português | inglês (v0.7) |
+
+NFs de teste a estornar antes de qualquer envio à Prefeitura (J1BNFE): 226751, 226752, 226753, 226756, 226758, 226759, 226761.
