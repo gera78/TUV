@@ -310,6 +310,8 @@ Classe de entrega **A** (aplicação, não customizing): os parâmetros são man
 | TAXLW4, TAXLW5, ITMTYP, MATUSE, MATORG | | * | ⏳ consultor fiscal (TAXLW1/TAXLW2 não usadas desde a v0.5 – item de serviço) |
 | WERKS | | * | opcional: vazio = centro do local de negócio (T001W-J_1BBRANCH) |
 | HDR_TEXT_ID | | * | ⏳ ID do texto de cabeçalho da NF (J1B3N); vazio = `OBJ_HEADER_MSG` |
+| NF_SERIES | | * | ⏳ série da NF (proposta 1); vazio = série do tipo de NF |
+| COLLCODE | | ICSQ / IIRW / … | ⏳ código de recolhimento por tipo de imposto (proposta ICSQ 5952, IIRW 1708) |
 
 ## 8. Pontos a verificar na ativação
 

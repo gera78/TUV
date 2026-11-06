@@ -4,9 +4,31 @@ Cada versão lista os problemas tratados, o que foi alterado e os objetos SAP a 
 
 | Versão | Data | Alterado por | Resumo |
 |---|---|---|---|
+| [0.7](#versão-07--em-andamento) | 06.11.2026 – | Alexandre Marcondes Silva | Open topics da 0.5: simulação no Validate only, descrição em PT, série e código de recolhimento por parâmetro |
 | [0.6](#versão-06--06112026) | 06.11.2026 | Alexandre Marcondes Silva | Ajustes após o teste de 06.11.2026 (open topics da 0.5) |
 | [0.5](#versão-05--04112026-a-06112026) | 04.11.2026 – 06.11.2026 | Alexandre Marcondes Silva | Correções do teste de criação da NF, check string da NF Writer, tabela de parâmetros classe A, mensagens de configuração como aviso |
 | [0.4](#versão-04--09102026-a-12102026) | 09.10.2026 – 12.10.2026 | Renato Santos | Versão inicial do código, gerador do DDIC, carga de parâmetros, arquivo de saída CSV |
+
+---
+
+## Versão 0.7 – em andamento
+
+**Alterado por:** Alexandre Marcondes Silva
+**Branch:** `ajustes/v0.7`
+
+| # | Open topic | Alteração | Objeto |
+|---|---|---|---|
+| OT10 | Validate only não chamava a BAPI: erros da NF Writer (CFOP, leis, tipos de imposto, centro…) só apareciam na execução real | Validate only monta a NF igual à execução real e chama a BAPI com `SIMULATION = 'X'` + rollback (nenhuma NF criada). Cada mensagem E/A da BAPI vai para o log da linha como **aviso (W)**; status da linha continua V | `ZSD_BR_NFSE_F01` (`MARK_VALIDATED`, novo `SIMULATE_NF`), `ZSD_BR_NFSE_TOP` |
+| OT5 | Descrição do material em inglês | `MAKT` lida em português (`GC_NF_LANGU = 'P'`); idioma de logon só se não houver texto em PT | `ZSD_BR_NFSE_F01` (`PREFETCH_MASTER_DATA`) |
+| OT6 | Série vazia (NF do SD: série 1) | Parâmetro opcional `NF_SERIES` (fixo, `*`): se preenchido, substitui a série do tipo de NF (`J_1BAA`). Uso do `NFNUM` (RPS) continua em P1 | `ZSD_BR_NFSE_F01` (`BUILD_BAPI_HEADER`), `ZSD_BR_NFSE_TOP` |
+| OT4 | Código de recolhimento das retenções vazio (NF do SD: 5952 / 1708) | Parâmetro opcional `COLLCODE` (coluna vazia, `Z_INPUT` = tipo de imposto ou `*`) → campo `COLLCODE` da linha de imposto (novo `SET_COLLCODE`) | `ZSD_BR_NFSE_F01`, `ZSD_BR_NFSE_TOP` |
+| OT2 / OT3 | Lei ISS e tipo de ISS | Carga de parâmetros propõe `TAXLW3` N = `I01` e `TAXTYP_ISS` N = `ISSA` (como a NF do SD 226744), `NF_SERIES` = 1, `COLLCODE` ICSQ = 5952 e IIRW = 1708 – a confirmar com o fiscal | `ZSD_BR_NFSE_PARM_LOAD` |
+
+**A conferir no sistema (SE11/SE37):** domínio do parâmetro `SIMULATION` (`J_1BNFE_SIMULATE`) aceita `X`; campo `COLLCODE` existe na `BAPI_J_1BNFSTX` (se não existir, o código de recolhimento não é enviado – sem erro).
+
+**Objetos SAP a atualizar:** `ZSD_BR_NFSE_TOP`, `ZSD_BR_NFSE_F01` (ativar com `ZSD_BR_NFSE_UPLOAD` e `ZSD_BR_NFSE_UPLOAD_ADM`), `ZSD_BR_NFSE_PARM_LOAD`; parâmetros `NF_SERIES` e `COLLCODE` (SM30), se usados.
+
+**Continuam abertos:** OT7 (`HDR_TEXT_ID`), OT8 (`infCpl` via BAdI), OT9 (P25), OT11 (estornar NFs de teste), P1 (uso do `NFNUM`).
 
 ---
 
