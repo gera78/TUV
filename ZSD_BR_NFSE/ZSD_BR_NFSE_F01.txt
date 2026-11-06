@@ -40,6 +40,10 @@
 *   TAXLW1/TAXLW2 not sent nor checked; withheld tax lines with       *
 *   WITHHOLD / TAXINNET = X (SET_WITHHELD); partner function RE.      *
 * - Header NFESRV / MUNICIPAL = X (service NF, municipal document).   *
+* 06.11.2026      Alexandre Marcondes Silva                           *
+* v0.6 - CFOP sent in BAPI_J_1BNFLIN-CFOP_10 (CHAR 10) instead of     *
+*   CFOP (old CHAR 5 field - CFOP stored as 593/3A); separators       *
+*   removed from the parameter value.                                 *
 *---------------------------------------------------------------------*
 
 *&---------------------------------------------------------------------*
@@ -1943,9 +1947,17 @@ FORM build_bapi_item USING    us_data TYPE zsd_br_nfse_data
   PERFORM set_component USING 'TMISS'  abap_true CHANGING ls_item.
   PERFORM set_component USING 'INCLTX' abap_true CHANGING ls_item.
 
+* CFOP: BAPI_J_1BNFLIN-CFOP is the OLD 5-character CFOP (J_1BCFOP_OLD)
+* - "5933AA" was cut to "5933A" and shown as "593/3A". The current CFOP
+* (code + extension, J_1BCFOP CHAR 10) goes in CFOP_10, internal format
+* without separators: the parameter may hold "5933AA", "5933/AA" or
+* "5.933/AA".
   PERFORM get_param USING gc_p_cfop gc_col_taker_region us_data-taker_region
                     CHANGING lv_value lv_found.
-  PERFORM set_component USING 'CFOP' lv_value CHANGING ls_item.
+  REPLACE ALL OCCURRENCES OF '/' IN lv_value WITH ''.
+  REPLACE ALL OCCURRENCES OF '.' IN lv_value WITH ''.
+  CONDENSE lv_value NO-GAPS.
+  PERFORM set_component USING 'CFOP_10' lv_value CHANGING ls_item.
 
 * Fixed parameters: the parameter name is also the BAPI field name.
 * TAXLW1 / TAXLW2 (ICMS / IPI law) are not sent: service item (TMISS)
