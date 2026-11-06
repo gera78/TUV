@@ -31,6 +31,7 @@ Cada versão lista os problemas tratados, o que foi alterado e os objetos SAP a 
 | 6 | **Mensagens de configuração 023 e 025 só como aviso no Validate only**: novo `FORM ADD_CONFIG_LOG`. Na execução real não são geradas e o erro vem do retorno da BAPI | `ZSD_BR_NFSE_F01` |
 | 7 | **Tabela `ZSD_BR_NFSE_PARM` com classe de entrega A** (aplicação) em vez de C (customizing): parâmetros mantidos direto em cada mandante, sem ordem de transporte | `ZSD_BR_NFSE_DDIC_GEN`, SE11, SE54 |
 | 8 | Nova mensagem **047** "Error calling &1: &2&3&4" na classe `ZSD_BR_NFSE_MSG` | `ZSD_BR_NFSE_DDIC_GEN` / SE91 |
+| 4a | **Total da NF 2.100 em vez de 2.000 / retenções sem flag** (comparação com NF de serviço correta do SD, 226744) | Item com `TMISS = X` (serviço, sem ICMS/IPI) e `INCLTX = X` (preço com ISS); leis ICMS/IPI (TAXLW1/TAXLW2) não enviadas nem validadas; linhas de imposto retido com `WITHHOLD = X` e `TAXINNET = X` (`FORM SET_WITHHELD`); função de parceiro **RE** em vez de AG | `ZSD_BR_NFSE_TOP`, `ZSD_BR_NFSE_F01` (`BUILD_BAPI_ITEM`, `BUILD_BAPI_TAXES`, `APPEND_TAX`, `CHECK_LINE_CONFIG`) |
 | 8a | **Descrição do serviço no texto de cabeçalho da NF** (problema: texto ia para `OBJ_HEADER_MSG` e não aparecia na J1B3N). Com o novo parâmetro `HDR_TEXT_ID`, a coluna AH "Discriminação dos Serviços" vai para `OBJ_HEADER_TEXT` (linhas de 132 caracteres); parâmetro vazio mantém o `OBJ_HEADER_MSG` | `ZSD_BR_NFSE_TOP`, `ZSD_BR_NFSE_F01` (`BUILD_BAPI_TEXTS`, `CREATE_NF`), `ZSD_BR_NFSE_PARM_LOAD` |
 
 ### Documentação
@@ -53,7 +54,7 @@ Cada versão lista os problemas tratados, o que foi alterado e os objetos SAP a 
 | Programa `ZSD_BR_NFSE_DDIC_GEN` | Copiar e rodar (cria a mensagem 047) – ou criar a 047 na SE91 |
 | Tabela `ZSD_BR_NFSE_PARM` | SE11: classe de entrega C → A. SE54: regerar com "sem rotina de gravação ou rotina do usuário" |
 | Programa `ZSD_BR_NFSE_PARM_LOAD` | Copiar e ativar (proposta do parâmetro `HDR_TEXT_ID`) |
-| Parâmetros (SM30) | Preencher `Z_OUTPUT` de MATUSE, ITMTYP, TAXLW1–5, TAXTYP_*; criar `HDR_TEXT_ID` com o ID do texto de cabeçalho |
+| Parâmetros (SM30) | Preencher `Z_OUTPUT` de MATUSE, ITMTYP, TAXLW3–5, TAXTYP_*; criar `HDR_TEXT_ID`; CFOP no formato `5933/AA` / `6933/AA`; `TAXLW3 = I01` |
 
 ### Pendências abertas
 

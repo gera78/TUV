@@ -36,6 +36,9 @@
 * - 023 / 025 as warning only in Validate only (ADD_CONFIG_LOG).      *
 * - Service description as NF header text (OBJ_HEADER_TEXT, text ID   *
 *   from parameter HDR_TEXT_ID); OBJ_HEADER_MSG if it is empty.       *
+* - Service item: TMISS / INCLTX = X (NF total included ISS twice);   *
+*   TAXLW1/TAXLW2 not sent nor checked; withheld tax lines with       *
+*   WITHHOLD / TAXINNET = X (SET_WITHHELD); partner function RE.      *
 *---------------------------------------------------------------------*
 
 *&---------------------------------------------------------------------*
@@ -1381,7 +1384,7 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 * 023 - every tax column with a value needs its tax type parameter
 *       (CBS/IBS columns only when SEND_CBS_IBS = X).
-* 025 - other mandatory NF parameters (CFOP, tax laws, item type,
+* 025 - other mandatory NF parameters (CFOP, ISS/PIS/COFINS laws, item type,
 *       material usage, material origin, plant) - missing or with an
 *       empty value.
 * Configuration messages never block the line (see ADD_CONFIG_LOG):
@@ -1432,9 +1435,8 @@ FORM check_line_config USING    us_data TYPE zsd_br_nfse_data
 
 * Fixed item parameters - must exist AND have a value (an entry with
 * empty Z_OUTPUT would reach the BAPI empty, e.g. 8B 660 for MATUSE)
-  DATA(lt_fixed) = VALUE gty_fieldname_tab( ( gc_p_taxlw1 ) ( gc_p_taxlw2 ) ( gc_p_taxlw4 )
-                                            ( gc_p_taxlw5 ) ( gc_p_itmtyp ) ( gc_p_matuse )
-                                            ( gc_p_matorg ) ).
+  DATA(lt_fixed) = VALUE gty_fieldname_tab( ( gc_p_taxlw4 ) ( gc_p_taxlw5 ) ( gc_p_itmtyp )
+                                            ( gc_p_matuse ) ( gc_p_matorg ) ).
   LOOP AT lt_fixed INTO DATA(lv_name).
     PERFORM get_param USING lv_name '' gc_wildcard CHANGING lv_value lv_found.
     IF lv_found = abap_false OR lv_value IS INITIAL.
@@ -1929,14 +1931,19 @@ FORM build_bapi_item USING    us_data TYPE zsd_br_nfse_data
   ls_item-netwr  = us_data-service_amount.
   ls_item-werks  = gv_werks.
   PERFORM set_component USING 'BWKEY' gv_bwkey CHANGING ls_item.
+* Service item (ISS, no ICMS/IPI) and price including ISS - as in the
+* NFs created from SD billing; without INCLTX the ISS was added on top
+* of the service amount (NF total 2100 for a service of 2000)
+  PERFORM set_component USING 'TMISS'  abap_true CHANGING ls_item.
+  PERFORM set_component USING 'INCLTX' abap_true CHANGING ls_item.
 
   PERFORM get_param USING gc_p_cfop gc_col_taker_region us_data-taker_region
                     CHANGING lv_value lv_found.
   PERFORM set_component USING 'CFOP' lv_value CHANGING ls_item.
 
-* Fixed parameters: the parameter name is also the BAPI field name
+* Fixed parameters: the parameter name is also the BAPI field name.
+* TAXLW1 / TAXLW2 (ICMS / IPI law) are not sent: service item (TMISS)
   DATA(lt_fixed) = VALUE gty_fieldname_tab( ( gc_p_itmtyp ) ( gc_p_matuse ) ( gc_p_matorg )
-                                            ( gc_p_taxlw1 ) ( gc_p_taxlw2 )
                                             ( gc_p_taxlw4 ) ( gc_p_taxlw5 ) ).
   LOOP AT lt_fixed INTO DATA(lv_name).
     PERFORM get_param USING lv_name '' gc_wildcard CHANGING lv_value lv_found.
@@ -1975,28 +1982,33 @@ FORM build_bapi_taxes USING    us_data TYPE zsd_br_nfse_data
 
   DATA: lv_taxtyp TYPE string,
         lv_found  TYPE abap_bool,
-        lv_rate   TYPE p LENGTH 8 DECIMALS 4.
+        lv_rate   TYPE p LENGTH 8 DECIMALS 4,
+        ls_tax    TYPE bapi_j_1bnfstx.
 
   IF gv_send_cbs = abap_true.
-    PERFORM append_tax USING us_data-service_amount us_data-cbs_due_amt gc_p_taxtyp_cbs    CHANGING ct_tax.
-    PERFORM append_tax USING us_data-service_amount us_data-ibs_due_amt gc_p_taxtyp_ibs    CHANGING ct_tax.
-    PERFORM append_tax USING us_data-service_amount us_data-cbs_wht_amt gc_p_taxtyp_cbs_wt CHANGING ct_tax.
-    PERFORM append_tax USING us_data-service_amount us_data-ibs_wht_amt gc_p_taxtyp_ibs_wt CHANGING ct_tax.
+    PERFORM append_tax USING us_data-service_amount us_data-cbs_due_amt gc_p_taxtyp_cbs    abap_false CHANGING ct_tax.
+    PERFORM append_tax USING us_data-service_amount us_data-ibs_due_amt gc_p_taxtyp_ibs    abap_false CHANGING ct_tax.
+    PERFORM append_tax USING us_data-service_amount us_data-cbs_wht_amt gc_p_taxtyp_cbs_wt abap_true  CHANGING ct_tax.
+    PERFORM append_tax USING us_data-service_amount us_data-ibs_wht_amt gc_p_taxtyp_ibs_wt abap_true  CHANGING ct_tax.
   ENDIF.
-  PERFORM append_tax USING us_data-service_amount us_data-inss_amt     gc_p_taxtyp_inss CHANGING ct_tax.
-  PERFORM append_tax USING us_data-service_amount us_data-irrf_wht_amt gc_p_taxtyp_irrf CHANGING ct_tax.
-  PERFORM append_tax USING us_data-service_amount us_data-csll_wht_amt gc_p_taxtyp_csll CHANGING ct_tax.
+  PERFORM append_tax USING us_data-service_amount us_data-inss_amt     gc_p_taxtyp_inss abap_true CHANGING ct_tax.
+  PERFORM append_tax USING us_data-service_amount us_data-irrf_wht_amt gc_p_taxtyp_irrf abap_true CHANGING ct_tax.
+  PERFORM append_tax USING us_data-service_amount us_data-csll_wht_amt gc_p_taxtyp_csll abap_true CHANGING ct_tax.
 
 * ISS: tax type by withheld flag, rate from the spreadsheet
   IF us_data-iss_amt > 0.
     PERFORM get_param USING gc_p_taxtyp_iss gc_col_iss_wht us_data-iss_wht_flag
                       CHANGING lv_taxtyp lv_found.
     lv_rate = us_data-iss_rate * 100.
-    APPEND VALUE bapi_j_1bnfstx( itmnum = gc_item_number
-                                 taxtyp = lv_taxtyp
-                                 base   = us_data-service_amount
-                                 rate   = lv_rate
-                                 taxval = us_data-iss_amt ) TO ct_tax.
+    ls_tax = VALUE #( itmnum = gc_item_number
+                      taxtyp = lv_taxtyp
+                      base   = us_data-service_amount
+                      rate   = lv_rate
+                      taxval = us_data-iss_amt ).
+    IF us_data-iss_wht_flag = gc_yes.
+      PERFORM set_withheld CHANGING ls_tax.
+    ENDIF.
+    APPEND ls_tax TO ct_tax.
   ENDIF.
 
 ENDFORM.
@@ -2007,14 +2019,16 @@ ENDFORM.
 * Tax line for one column with a value; the tax type comes from the
 * fixed parameter UV_PARAM. Nothing is added for a zero value.
 *----------------------------------------------------------------------*
-FORM append_tax USING    uv_base   TYPE zsd_br_nfse_service_amount
-                         uv_value  TYPE any
-                         uv_param  TYPE fieldname
-                CHANGING ct_tax    TYPE STANDARD TABLE.
+FORM append_tax USING    uv_base     TYPE zsd_br_nfse_service_amount
+                         uv_value    TYPE any
+                         uv_param    TYPE fieldname
+                         uv_withheld TYPE abap_bool
+                CHANGING ct_tax      TYPE STANDARD TABLE.
 
   DATA: lv_rate   TYPE p LENGTH 8 DECIMALS 4,
         lv_taxtyp TYPE string,
-        lv_found  TYPE abap_bool.
+        lv_found  TYPE abap_bool,
+        ls_tax    TYPE bapi_j_1bnfstx.
 
   IF uv_value <= 0.
     RETURN.
@@ -2023,11 +2037,30 @@ FORM append_tax USING    uv_base   TYPE zsd_br_nfse_service_amount
   IF uv_base > 0.
     lv_rate = uv_value / uv_base * 100.
   ENDIF.
-  APPEND VALUE bapi_j_1bnfstx( itmnum = gc_item_number
-                               taxtyp = lv_taxtyp
-                               base   = uv_base
-                               rate   = lv_rate
-                               taxval = uv_value ) TO ct_tax.
+  ls_tax = VALUE #( itmnum = gc_item_number
+                    taxtyp = lv_taxtyp
+                    base   = uv_base
+                    rate   = lv_rate
+                    taxval = uv_value ).
+  IF uv_withheld = abap_true.
+    PERFORM set_withheld CHANGING ls_tax.
+  ENDIF.
+  APPEND ls_tax TO ct_tax.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SET_WITHHELD
+*&---------------------------------------------------------------------*
+* Withheld tax line: "Withholding Tax" and "Tax Incl. in Net Value"
+* flags, as in the NFs created from SD billing (otherwise the withheld
+* amount of the NF header stays zero). Set only if the fields exist in
+* BAPI_J_1BNFSTX (SET_COMPONENT).
+*----------------------------------------------------------------------*
+FORM set_withheld CHANGING cs_tax TYPE bapi_j_1bnfstx.
+
+  PERFORM set_component USING 'WITHHOLD' abap_true CHANGING cs_tax.
+  PERFORM set_component USING 'TAXINNET' abap_true CHANGING cs_tax.
 
 ENDFORM.
 

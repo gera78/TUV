@@ -415,7 +415,7 @@ Configurações técnicas: classe de entrega **A** (aplicação – dados mestre
 | TAXTYP_CSLL | (tipo CSLL retido) | Se coluna N > 0 | Grupo 03 |
 | TAXTYP_CBS_WHT | (tipo CBS retido) | Se coluna O > 0 | Grupo 03 |
 | TAXTYP_IBS_WHT | (tipo IBS retido) | Se coluna P > 0 | Grupo 03 |
-| TAXLW1 / TAXLW2 | (lei ICMS / IPI não tributado) | Sim | Item da NF |
+| TAXLW1 / TAXLW2 | (lei ICMS / IPI) | Não | v0.5: **não enviadas** – item de serviço (`TMISS = X`), como nas NFs de serviço do SD |
 | TAXLW4 / TAXLW5 | (lei COFINS / PIS) | Sim | ⏳ confirmar com fiscal |
 | ITMTYP | (tipo de item) | Sim | Item da NF |
 | MATUSE | (utilização do material) | Sim | Item da NF |
@@ -541,14 +541,14 @@ Uma NF por linha válida, 1 item, sob o bloqueio `EZSD_BR_NFSE`. Após a chamada
 | DOCDAT / PSTDAT | `P_DOCDAT` (padrão SY-DATUM) ✅ |
 | MANUAL | 'X' |
 | WAERK | 'BRL' |
-| PARVW / PARID / PARTYP | 'AG' / KUNNR / 'C' ✅ |
+| PARVW / PARID / PARTYP | 'RE' / KUNNR / 'C' ✅ (v0.5: RE – recebedor da fatura, como nas NFs de serviço do SD; antes AG) |
 | NFNUM | **RPS_NUMBER** ✅ (confirmado: o RPS é o `J_1BNFDOC-NFNUM`, 6 dígitos). Pré-requisito: NF type Z1 com numeração externa (manual) na J_1BAA |
 
 ### 11.2 `OBJ_PARTNER`
 
 | PARVW | PARID | PARTYP |
 |---|---|---|
-| AG | KUNNR | C |
+| RE | KUNNR | C |
 
 Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usados só para validação e log.
 
@@ -564,6 +564,7 @@ Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usad
 | WERKS | Parâmetro WERKS ou derivado do local de negócio |
 | CFOP | Parâmetro CFOP (por UF do tomador) |
 | ITMTYP / MATUSE / MATORG | Parâmetros |
+| TMISS / INCLTX | `X` / `X` – v0.5: item de serviço (ISS, sem ICMS/IPI) e preço com ISS incluído (sem isso o ISS era somado ao total) |
 | TAXLW1 / TAXLW2 / TAXLW4 / TAXLW5 | Parâmetros |
 | TAXLW3 | Parâmetro TAXLW3 (por ISS Retido) |
 | XPED | PO_NUMBER |
@@ -854,6 +855,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | P24 | Passos após o 06 do fluxo do cliente ("customer delivery") e se algum deles é o passo esquecido (P21) | ⏳ cliente | – |
 | P25 | Parâmetro `MATNR`: hoje o material do item é determinado pelo código de serviço – `FILE_COLUMN_NAME` = "Código do Serviço Prestado na Nota Fiscal" e `Z_INPUT` = código da coluna U (ex.: 1805), sem zeros à esquerda; sem cadastro para o código, usa a entrada `*`, se existir. Questionar se está correto: é preciso um material por código de serviço, ou o material deve ser único (só `*`) ou determinado por outro critério? | ⏳ em teste (funcional) | Mantido como está: um registro `MATNR` por código de serviço ou um `*` para todos; sem parâmetro → msg 005 |
 | P26 | Teste de 06/11/2026 – criação da NF com 8B 150 (situação tributária faltando) e 8B 151 (NCM faltando) no item de serviço. A situação tributária ICMS/IPI vem das leis fiscais TAXLW1/TAXLW2 (estavam vazias no parâmetro); o NCM vem do cadastro do material/centro. Definir: preencher TAXLW1/TAXLW2 e o NCM do material de serviço, ou enviar o item como item de ISS / desligar os checks 27 e 28 (`BUILD_BAPI_NFCHECK`) | ✅ checks 13, 27 e 28 desligados no `BUILD_BAPI_NFCHECK`, passado à BAPI no parâmetro `NFCHECK` | Validação 025 agora bloqueia parâmetro com valor vazio (antes passava e gerava 8B 660 para MATUSE); BWKEY do item preenchido com T001W-BWKEY do centro (8B 685) |
+| P27 | Comparação com NF de serviço correta do SD (226744) × NFs de teste 226751–753 (06/11/2026): total 2.100 em vez de 2.000, retenções sem flag, CFOP gravado `593/3A`, lei ISS `ISS`, parceiro AG | ✅ código v0.5: `TMISS`/`INCLTX`, flags `WITHHOLD`/`TAXINNET` nas retenções, TAXLW1/2 não enviadas, parceiro RE. ⏳ parâmetros: CFOP no formato `5933/AA` / `6933/AA`, `TAXLW3 = I01`, `TAXTYP_ISS` (ISSA × ISSE) com o fiscal; série / NFNUM (P1, P1a) e código de recolhimento das retenções a confirmar | – |
 | P20 | Extensão e separador do arquivo de saída | ✅ `.csv`, separado por `;` | – |
 | P21 | Passo adicional que o cliente disse ter esquecido de mencionar | ⏳ cliente | – |
 | P22 | Quem envia os RPS à Prefeitura | ✅ SAP padrão, J1BNFE (passo 03 do fluxo do cliente) – fora do escopo deste desenvolvimento. O RPS é numerado na planilha ✅ e vai para `NFNUM` via BAPI; o J1BNFE apenas envia | – |

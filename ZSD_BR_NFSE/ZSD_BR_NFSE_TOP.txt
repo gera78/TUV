@@ -20,6 +20,7 @@
 * 06.11.2026  Alexandre Marcondes Silva                               *
 * v0.5 - GV_BWKEY: valuation area of the item plant (8B 685).         *
 * - GC_P_HDR_TEXT_ID, GC_HDR_TEXT_WIDTH (NF header text).             *
+* - GC_PARTNER_ROLE = RE (bill-to party) instead of AG.               *
 *---------------------------------------------------------------------*
 
 TYPE-POOLS: icon.
@@ -55,7 +56,7 @@ CONSTANTS:
   gc_parm_view    TYPE tabname  VALUE 'ZSD_BR_NFSE_PARM',
   gc_lock_table   TYPE tabname  VALUE 'ZSD_BR_NFSE_FILE',
   gc_currency     TYPE waers    VALUE 'BRL',
-  gc_partner_role TYPE parvw    VALUE 'AG',
+  gc_partner_role TYPE parvw    VALUE 'RE',   " bill-to party, as in the SD service NFs
   gc_partner_type TYPE char1    VALUE 'C',
   gc_direct_out   TYPE char1    VALUE '2',
   gc_item_number  TYPE j_1bnflin-itmnum VALUE '000010',
