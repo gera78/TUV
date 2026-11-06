@@ -593,8 +593,13 @@ Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usad
 
 | Resultado | ZSD_BR_NFSE_DATA | ZSD_BR_NFSE_LOG |
 |---|---|---|
-| Sucesso | STATUS = S, DOCNUM = DOC_NUMBER (gravado antes do COMMIT) | Msg 022 (tipo S) com DOCNUM |
+| Sucesso | STATUS = S, DOCNUM = E_DOCNUM (gravado antes do COMMIT) | Msg 022 (tipo S) com DOCNUM |
 | Erro | STATUS = E | Cada mensagem E/A do RETURN: classe (ID), número, texto |
+| Falha na chamada da BAPI (interface ou ERROR_MESSAGE) | STATUS = E, sem dump | Msg 047 ou a mensagem da própria BAPI |
+
+### 11.7 Check string da NF Writer – `BUILD_BAPI_NFCHECK`
+
+O `FORM BUILD_BAPI_NFCHECK` monta o check string de 47 posições lido pela rotina padrão `CHECK_NF_BAPI`, com todos os checks ligados e uma variável por check para desligar. Detalhes, tabela das posições e pontos de atenção: [`ZSD_BR_NFSE_NFCHECK.md`](ZSD_BR_NFSE_NFCHECK.md).
 
 ---
 
