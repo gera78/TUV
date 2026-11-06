@@ -56,11 +56,21 @@ Cada versão lista os problemas tratados, o que foi alterado e os objetos SAP a 
 | Programa `ZSD_BR_NFSE_PARM_LOAD` | Copiar e ativar (proposta do parâmetro `HDR_TEXT_ID`) |
 | Parâmetros (SM30) | Preencher `Z_OUTPUT` de MATUSE, ITMTYP, TAXLW3–5, TAXTYP_*; criar `HDR_TEXT_ID`; CFOP no formato `5933/AA` / `6933/AA`; `TAXLW3 = I01` |
 
-### Pendências abertas
+### Pendências abertas (open topics) – resultado do teste de 06.11.2026 (NF 226758)
 
-- **ID do texto de cabeçalho** (`HDR_TEXT_ID`) – definir qual ID de texto a J1B3N mostra no cabeçalho da NF.
-- **P25** – confirmar se o material deve ser determinado pelo código de serviço (parâmetro `MATNR`).
-- Na execução real, parâmetros vazios de configuração não bloqueiam mais a linha; com o check 27 desligado, a NF pode ser criada sem TAXLW1/TAXLW2. Rodar sempre o Validate only antes.
+| # | Tema | Situação | Próximo passo |
+|---|---|---|---|
+| OT1 | **CFOP gravado como `593/3A`** (natureza da operação vazia) com `5933AA` e com `5933/AA` | Causa encontrada: o programa preenche `BAPI_J_1BNFLIN-CFOP` (`J_1BCFOP_OLD`, CHAR 5 – formato antigo), o valor é cortado em 5 posições | Corrigir na v0.6: preencher `CFOP_10` (`J_1BCFOP`, CHAR 10) |
+| OT2 | Lei ISS `ISS` em vez de `I01` (situação tributária ISS vazia) | Parâmetro | SM30: `TAXLW3` (coluna "ISS Retido", Y e N) = `I01` |
+| OT3 | Tipo de imposto do ISS: `ISSE` (grupo ISSS, sem domicílio fiscal) × `ISSA` (grupo ISSP, domicílio SP 3550308) na NF do SD | Fiscal | Confirmar `TAXTYP_ISS` com o consultor fiscal |
+| OT4 | Código de recolhimento das retenções vazio (NF do SD: 5952 / 1708) | Fiscal | Confirmar se vem da configuração ou se precisa ser enviado (parâmetro por tipo de imposto) |
+| OT5 | Descrição do material em inglês ("1XNK misc. extra costs") | Código | Ler `MAKT` em português (idioma da NF), idioma de logon como reserva |
+| OT6 | Série vazia e RPS no número da NF (NF do SD: série 1, NFNUM 0) | Fiscal (P1, P1a) | Decidir série e uso do `NFNUM`; campos `SERIES`, `ZTERM`, `GJAHR` disponíveis na `BAPI_J_1BNFDOC` |
+| OT7 | ID do texto de cabeçalho (`HDR_TEXT_ID`) | Funcional | Definir qual ID de texto a J1B3N mostra |
+| OT8 | `infCpl` com a discriminação dos serviços | Desenho pronto (bloco 0a da BAdI `ZI_NFE_ADD_DATA`) | Implementar na BAdI (objeto fora deste repositório) |
+| OT9 | **P25** – material determinado pelo código de serviço (parâmetro `MATNR`) | Teste | Confirmar |
+| OT10 | Validate only não chama a BAPI: erros 8B só aparecem na execução real; na execução real parâmetros vazios não bloqueiam (023/025 só aviso) | Código | Avaliar `SIMULATION = 'X'` da BAPI no Validate only |
+| OT11 | NFs de teste 226751–226753, 226756, 226758 | Teste | Estornar antes de enviar à Prefeitura (J1BNFE) |
 
 ---
 
