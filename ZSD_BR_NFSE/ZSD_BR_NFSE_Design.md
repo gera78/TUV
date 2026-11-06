@@ -420,6 +420,7 @@ Configurações técnicas: classe de entrega **A** (aplicação – dados mestre
 | ITMTYP | (tipo de item) | Sim | Item da NF |
 | MATUSE | (utilização do material) | Sim | Item da NF |
 | MATORG | 0 | Sim | Origem do material |
+| HDR_TEXT_ID | (ID de texto do cabeçalho da NF) | Não | ⏳ v0.5 – ID do texto de cabeçalho exibido na J1B3N para a discriminação dos serviços. Vazio = texto vai para `OBJ_HEADER_MSG` |
 | WERKS | (centro) | Não | Vazio → derivado do local de negócio (`J_1BT001WV`) |
 | TAXGRP_REQ_01 | X | Não | Grupo 01 obrigatório (msg 014) |
 | TAXGRP_REQ_02 | (vazio) | Não | Grupo 02 opcional |
@@ -585,9 +586,10 @@ Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usad
 
 > ⚠️ Pré-requisito fiscal: tipos de retenção configurados como **retenção** na J_1BAJ (não somam ao total da NF) e NF type Z1 sem lançamento contábil (J_1BAA).
 
-### 11.5 `OBJ_HEADER_MSG` – texto da NF
+### 11.5 Texto da NF – `OBJ_HEADER_TEXT` (ou `OBJ_HEADER_MSG`)
 
-- Discriminação dos serviços: `||` e `|` = quebra de linha; cada linha quebrada em blocos de 72 caracteres (sem cortar palavras).
+- Discriminação dos serviços (coluna AH): `||` e `|` = quebra de linha; cada linha quebrada sem cortar palavras.
+- **v0.5**: com o parâmetro `HDR_TEXT_ID` preenchido, o texto vai para o **texto de cabeçalho da NF** (`OBJ_HEADER_TEXT`, estrutura `BAPI_J_1BNFTEXTHEADER`: `TEXT_ID` = parâmetro, `TEXT_FORM = '*'`, `TEXT_LINE` até 132 caracteres) e aparece na J1B3N. Com o parâmetro vazio, o comportamento anterior é mantido: `OBJ_HEADER_MSG`, linhas de 72 caracteres (não aparece na J1B3N).
 - O RPS não é repetido no texto: ele é o próprio número da NF (`NFNUM`).
 
 ### 11.6 Retorno

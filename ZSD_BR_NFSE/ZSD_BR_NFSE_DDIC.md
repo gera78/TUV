@@ -309,6 +309,7 @@ Classe de entrega **A** (aplicação, não customizing): os parâmetros são man
 | TAXTYP_INSS, _IRRF, _CSLL (e _CBS, _IBS, _CBS_WHT, _IBS_WHT) | | * | ⏳ tipos de imposto |
 | TAXLW1, TAXLW2, TAXLW4, TAXLW5, ITMTYP, MATUSE, MATORG | | * | ⏳ consultor fiscal |
 | WERKS | | * | opcional: vazio = centro do local de negócio (T001W-J_1BBRANCH) |
+| HDR_TEXT_ID | | * | ⏳ ID do texto de cabeçalho da NF (J1B3N); vazio = `OBJ_HEADER_MSG` |
 
 ## 8. Pontos a verificar na ativação
 

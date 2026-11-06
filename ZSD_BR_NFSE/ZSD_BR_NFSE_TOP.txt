@@ -19,6 +19,7 @@
 * Initial version.                                                    *
 * 06.11.2026  Alexandre Marcondes Silva                               *
 * v0.5 - GV_BWKEY: valuation area of the item plant (8B 685).         *
+* - GC_P_HDR_TEXT_ID, GC_HDR_TEXT_WIDTH (NF header text).             *
 *---------------------------------------------------------------------*
 
 TYPE-POOLS: icon.
@@ -59,6 +60,7 @@ CONSTANTS:
   gc_direct_out   TYPE char1    VALUE '2',
   gc_item_number  TYPE j_1bnflin-itmnum VALUE '000010',
   gc_text_width   TYPE i        VALUE 72,
+  gc_hdr_text_width TYPE i      VALUE 132,   " BAPI_J_1BNFTEXTHEADER-TEXT_LINE
   gc_header_row   TYPE i        VALUE 2,     " Excel row holding the column names
   gc_first_row    TYPE i        VALUE 3,     " first Excel row holding data
   gc_last_column  TYPE i        VALUE 54,    " A .. BB
@@ -113,6 +115,7 @@ CONSTANTS:
   gc_p_itmtyp        TYPE fieldname VALUE 'ITMTYP',
   gc_p_matuse        TYPE fieldname VALUE 'MATUSE',
   gc_p_matorg        TYPE fieldname VALUE 'MATORG',
+  gc_p_hdr_text_id   TYPE fieldname VALUE 'HDR_TEXT_ID',
   gc_p_taxlw1        TYPE fieldname VALUE 'TAXLW1',
   gc_p_taxlw2        TYPE fieldname VALUE 'TAXLW2',
   gc_p_taxlw3        TYPE fieldname VALUE 'TAXLW3',
