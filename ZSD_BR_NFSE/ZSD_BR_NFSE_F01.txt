@@ -999,7 +999,8 @@ ENDFORM.
 *&      Form  DETERMINE_PLANT
 *&---------------------------------------------------------------------*
 * Plant of the NF item: parameter WERKS, otherwise the first plant
-* assigned to the business place (T001W-J_1BBRANCH).
+* assigned to the business place (T001W-J_1BBRANCH). Also reads the
+* valuation area of that plant (T001W-BWKEY) for the item.
 *----------------------------------------------------------------------*
 FORM determine_plant.
 
@@ -1014,6 +1015,14 @@ FORM determine_plant.
       INTO @gv_werks
       UP TO 1 ROWS.
     ENDSELECT.
+  ENDIF.
+
+* Valuation area of the plant - item BWKEY (standard check 8B 685)
+  CLEAR gv_bwkey.
+  IF gv_werks IS NOT INITIAL.
+    SELECT SINGLE bwkey FROM t001w
+      WHERE werks = @gv_werks
+      INTO @gv_bwkey.
   ENDIF.
 
 ENDFORM.
@@ -1363,7 +1372,8 @@ ENDFORM.
 * 023 - every tax column with a value needs its tax type parameter
 *       (CBS/IBS columns only when SEND_CBS_IBS = X).
 * 025 - other mandatory NF parameters (CFOP, tax laws, item type,
-*       material usage, plant).
+*       material usage, material origin, plant) - missing or with an
+*       empty value.
 *----------------------------------------------------------------------*
 FORM check_line_config USING    us_data TYPE zsd_br_nfse_data
                        CHANGING cv_ok   TYPE abap_bool.
@@ -1397,7 +1407,7 @@ FORM check_line_config USING    us_data TYPE zsd_br_nfse_data
 * CFOP by service taker region
   PERFORM get_param USING gc_p_cfop gc_col_taker_region us_data-taker_region
                     CHANGING lv_value lv_found.
-  IF lv_found = abap_false.
+  IF lv_found = abap_false OR lv_value IS INITIAL.
     PERFORM add_log USING lv_line gc_msgty_error '025' gc_p_cfop us_data-taker_region space.
     cv_ok = abap_false.
   ENDIF.
@@ -1405,17 +1415,19 @@ FORM check_line_config USING    us_data TYPE zsd_br_nfse_data
 * ISS tax law by withheld flag
   PERFORM get_param USING gc_p_taxlw3 gc_col_iss_wht us_data-iss_wht_flag
                     CHANGING lv_value lv_found.
-  IF lv_found = abap_false.
+  IF lv_found = abap_false OR lv_value IS INITIAL.
     PERFORM add_log USING lv_line gc_msgty_error '025' gc_p_taxlw3 us_data-iss_wht_flag space.
     cv_ok = abap_false.
   ENDIF.
 
-* Fixed item parameters
+* Fixed item parameters - must exist AND have a value (an entry with
+* empty Z_OUTPUT would reach the BAPI empty, e.g. 8B 660 for MATUSE)
   DATA(lt_fixed) = VALUE gty_fieldname_tab( ( gc_p_taxlw1 ) ( gc_p_taxlw2 ) ( gc_p_taxlw4 )
-                                            ( gc_p_taxlw5 ) ( gc_p_itmtyp ) ( gc_p_matuse ) ).
+                                            ( gc_p_taxlw5 ) ( gc_p_itmtyp ) ( gc_p_matuse )
+                                            ( gc_p_matorg ) ).
   LOOP AT lt_fixed INTO DATA(lv_name).
     PERFORM get_param USING lv_name '' gc_wildcard CHANGING lv_value lv_found.
-    IF lv_found = abap_false.
+    IF lv_found = abap_false OR lv_value IS INITIAL.
       PERFORM add_log USING lv_line gc_msgty_error '025' lv_name gc_wildcard space.
       cv_ok = abap_false.
     ENDIF.
@@ -1878,6 +1890,7 @@ FORM build_bapi_item USING    us_data TYPE zsd_br_nfse_data
   ls_item-netpr  = us_data-service_amount.
   ls_item-netwr  = us_data-service_amount.
   ls_item-werks  = gv_werks.
+  PERFORM set_component USING 'BWKEY' gv_bwkey CHANGING ls_item.
 
   PERFORM get_param USING gc_p_cfop gc_col_taker_region us_data-taker_region
                     CHANGING lv_value lv_found.

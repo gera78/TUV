@@ -276,6 +276,7 @@ DATA:
   gv_alv_mode    TYPE char10,
   gv_send_cbs    TYPE abap_bool,
   gv_werks       TYPE werks_d,
+  gv_bwkey       TYPE bwkey,       " valuation area of GV_WERKS (T001W-BWKEY)
   gv_iss_tol     TYPE p LENGTH 8 DECIMALS 2,
   gs_file        TYPE zsd_br_nfse_file,
   gs_j1baa       TYPE j_1baa,
