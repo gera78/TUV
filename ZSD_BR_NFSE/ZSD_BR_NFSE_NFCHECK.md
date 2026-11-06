@@ -24,7 +24,7 @@ PERFORM build_bapi_nfcheck USING cs_data CHANGING lv_nfcheck.
 - Cada check é uma variável `lv_c01` … `lv_c47`, declarada com `VALUE 'X'` (ligado) e um comentário ao lado dizendo o que ela verifica.
 - Para **desligar**, trocar `VALUE 'X'` por `VALUE ' '` na variável correspondente.
 - Cada variável é gravada na **sua posição exata** (`lv_check+N(1)`). Desligar um check não desloca os seguintes – por isso o check string não é montado com `&&`, que descartaria os espaços.
-- Padrão entregue: **todos os 47 checks ligados**.
+- Padrão entregue: **todos os checks ligados, menos 13, 27 e 28** (grupo de mercadorias, situação tributária ICMS/IPI e NCM – não se aplicam ao item de serviço; desligados após o teste de 06/11/2026, erros 8B 150 e 8B 151).
 
 ## 3. Comportamento da rotina padrão
 
@@ -58,7 +58,7 @@ Posição = offset no check string (`checkstring+N(1)`). Classe `8B` = mensagens
 | `lv_c10` | 9 | 10 | Material do item existe na `MARA` | Erro | 8B 051 |
 | `lv_c11` | 10 | 11 | Centro do item existe na `T001W` | Erro | 8B 214 |
 | `lv_c12` | 11 | 12 | Item com centro precisa ter material | Erro | 8B 663 |
-| `lv_c13` | 12 | 13 | Grupo de mercadorias (`MATKL`) preenchido em todos os itens | Erro | 8B 323 |
+| `lv_c13` ⛔ desligado | 12 | 13 | Grupo de mercadorias (`MATKL`) preenchido em todos os itens | Erro | 8B 323 |
 | `lv_c14` | 13 | 14 | Unidade de medida existe na `T006` | Erro | 8B 185 |
 | `lv_c15` | 14 | 15 | NCM (`NBM`) existe na `T604F` (não vale para tipo de documento R) | Erro | 8B 683 |
 | `lv_c16` | 15 | 16 | Local de negócio / empresa preenchidos | Erro | Classe de check |
@@ -72,8 +72,8 @@ Posição = offset no check string (`checkstring+N(1)`). Classe `8B` = mensagens
 | `lv_c24` | 23 | 24 | Referência de documento preenchida nos tipos de item que exigem | Erro | Classe de check |
 | `lv_c25` | 24 | 25 | Primeiro dígito do CFOP igual em todos os itens | Erro | Classe de check |
 | `lv_c26` | 25 | 26 | Primeiro dígito do CFOP compatível com a direção (entrada/saída) | Erro | Classe de check |
-| `lv_c27` | 26 | 27 | Lei fiscal ICMS/IPI, situação tributária e origem do material preenchidas | Erro | Classe de check |
-| `lv_c28` | 27 | 28 | NCM preenchido | Erro | Classe de check |
+| `lv_c27` ⛔ desligado | 26 | 27 | Lei fiscal ICMS/IPI, situação tributária e origem do material preenchidas | Erro | Classe de check |
+| `lv_c28` ⛔ desligado | 27 | 28 | NCM preenchido | Erro | Classe de check |
 | `lv_c29` | 28 | 29 | Existe pelo menos uma linha de imposto | Erro | Classe de check |
 | `lv_c30` | 29 | 30 | Formulário da NF atende aos requisitos legais (tamanho de itens/textos) | Erro | Classe de check |
 | `lv_c31` | 30 | 31 | Tipo de documento existe na `J_1BDOCTYPES` | Erro | 8B 683 |
@@ -99,7 +99,7 @@ Posição = offset no check string (`checkstring+N(1)`). Classe `8B` = mensagens
 | # | Ponto | Status |
 |---|---|---|
 | 1 | **O check string ainda não é usado na criação da NF.** A `BAPI_J_1B_NF_CREATEFROMDATA`, como é chamada hoje no `FORM CREATE_NF`, não recebe check string. Falta definir onde o `lv_nfcheck` será passado. | ⏳ desenvolvimento |
-| 2 | Checks que podem não se aplicar a **serviço** (NFS-e): 13 (grupo de mercadorias – o `ZSD_BR_NFSE` não preenche `MATKL` no item), 15 e 28 (NCM), 27 (ICMS/IPI e origem). Confirmar no teste se o padrão já os ignora para itens de ISS ou completa o campo pelo cadastro do material; se não, desligar a variável correspondente. O check 33 não deve dar problema: o programa envia `MANUAL = 'X'` no cabeçalho. | ⏳ teste |
+| 2 | Checks 13 (grupo de mercadorias), 27 (ICMS/IPI e origem) e 28 (NCM) **desligados** – não se aplicam ao item de serviço (teste de 06/11/2026: 8B 150 e 8B 151). Os checks 15 (NCM existe na T604F, só quando o NCM vem preenchido) e 33 (o programa envia `MANUAL = 'X'`) continuam ligados. | ✅ |
 | 3 | Checks 40–43 só valem para NF-e; para NFS-e não têm efeito, mas foram mantidos ligados. | Informativo |
 | 4 | Check 01 e posições 44/45 ficam com `X` só para manter o tamanho de 47 posições. | Informativo |
 | 5 | O parâmetro `US_DATA` ainda não é usado; o ATC pode avisar. | Informativo |

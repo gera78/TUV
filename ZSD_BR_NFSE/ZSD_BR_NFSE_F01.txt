@@ -2039,8 +2039,10 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 * Builds the CHECKSTRING used by the NF Writer checks (standard FORM
 * CHECK_NF_BAPI). Each position switches one standard check on ('X')
-* or off (' '). All checks are on; to switch one off, change its VALUE
-* to space. Positions are written one by one (offset), so a check that
+* or off (' '). All checks are on except 13, 27 and 28 (not relevant
+* for a service item: material group, ICMS/IPI tax situation, NCM -
+* errors 8B 150 / 8B 151 in the test of 06.11.2026). To switch a check
+* on or off, change its VALUE ('X' / space). Positions are written one by one (offset), so a check that
 * is off never shifts the following ones.
 * Checks 1-4 only give a warning (SUBRC 4); 5 onwards stop the NF
 * (SUBRC 8). Checks 40-43 only run for NF-e (header NFE = 'X').
@@ -2066,7 +2068,7 @@ FORM build_bapi_nfcheck USING    us_data    TYPE zsd_br_nfse_data
         lv_c10 TYPE c LENGTH 1 VALUE 'X', " 10 Material of the item exists in MARA
         lv_c11 TYPE c LENGTH 1 VALUE 'X', " 11 Plant of the item exists in T001W
         lv_c12 TYPE c LENGTH 1 VALUE 'X', " 12 Item with plant must have a material number
-        lv_c13 TYPE c LENGTH 1 VALUE 'X', " 13 Material group (MATKL) filled on every item
+        lv_c13 TYPE c LENGTH 1 VALUE ' ', " 13 OFF: material group (MATKL) filled on every item
         lv_c14 TYPE c LENGTH 1 VALUE 'X', " 14 Unit of measure exists in T006
         lv_c15 TYPE c LENGTH 1 VALUE 'X', " 15 NCM (NBM) exists in T604F (not for doc. type R)
         lv_c16 TYPE c LENGTH 1 VALUE 'X', " 16 Business place / company code filled
@@ -2080,8 +2082,8 @@ FORM build_bapi_nfcheck USING    us_data    TYPE zsd_br_nfse_data
         lv_c24 TYPE c LENGTH 1 VALUE 'X', " 24 Document reference filled for item types that require it
         lv_c25 TYPE c LENGTH 1 VALUE 'X', " 25 First digit of the CFOP equal on all items
         lv_c26 TYPE c LENGTH 1 VALUE 'X', " 26 First digit of the CFOP fits the direction (in/out)
-        lv_c27 TYPE c LENGTH 1 VALUE 'X', " 27 ICMS/IPI tax law, tax situation and material origin filled
-        lv_c28 TYPE c LENGTH 1 VALUE 'X', " 28 NCM filled
+        lv_c27 TYPE c LENGTH 1 VALUE ' ', " 27 OFF: ICMS/IPI tax law, tax situation, mat. origin filled
+        lv_c28 TYPE c LENGTH 1 VALUE ' ', " 28 OFF: NCM filled
         lv_c29 TYPE c LENGTH 1 VALUE 'X', " 29 At least one tax line exists
         lv_c30 TYPE c LENGTH 1 VALUE 'X', " 30 NF form fits legal requirements (size of items / texts)
         lv_c31 TYPE c LENGTH 1 VALUE 'X', " 31 Document type exists in J_1BDOCTYPES
