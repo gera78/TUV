@@ -39,6 +39,7 @@
 * - Service item: TMISS / INCLTX = X (NF total included ISS twice);   *
 *   TAXLW1/TAXLW2 not sent nor checked; withheld tax lines with       *
 *   WITHHOLD / TAXINNET = X (SET_WITHHELD); partner function RE.      *
+* - Header NFESRV / MUNICIPAL = X (service NF, municipal document).   *
 *---------------------------------------------------------------------*
 
 *&---------------------------------------------------------------------*
@@ -1883,6 +1884,11 @@ FORM build_bapi_header USING    us_data    TYPE zsd_br_nfse_data
   cs_header-parid  = us_data-kunnr.
   cs_header-partyp = gc_partner_type.
   cs_header-nfnum  = condense( us_data-rps_number ).   " RPS = J_1BNFDOC-NFNUM
+* Service NF (NFS-e) and municipal fiscal document - explicit, as in
+* the service NFs created from SD billing (standard also derives them
+* from the service item TMISS)
+  cs_header-nfesrv    = abap_true.
+  cs_header-municipal = abap_true.
 
   PERFORM get_component USING gs_j1baa 'DOCTYP' CHANGING lv_value.
   PERFORM set_component USING 'DOCTYP' lv_value CHANGING cs_header.

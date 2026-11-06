@@ -544,6 +544,8 @@ Uma NF por linha válida, 1 item, sob o bloqueio `EZSD_BR_NFSE`. Após a chamada
 | PARVW / PARID / PARTYP | 'RE' / KUNNR / 'C' ✅ (v0.5: RE – recebedor da fatura, como nas NFs de serviço do SD; antes AG) |
 | NFNUM | **RPS_NUMBER** ✅ (confirmado: o RPS é o `J_1BNFDOC-NFNUM`, 6 dígitos). Pré-requisito: NF type Z1 com numeração externa (manual) na J_1BAA |
 
+v0.5: `NFESRV = 'X'` (Service NF/NF-e) e `MUNICIPAL = 'X'` (Municipal Fiscal Document) enviados explicitamente, como nas NFs de serviço do SD.
+
 ### 11.2 `OBJ_PARTNER`
 
 | PARVW | PARID | PARTYP |
