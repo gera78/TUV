@@ -4,8 +4,22 @@ Cada versão lista os problemas tratados, o que foi alterado e os objetos SAP a 
 
 | Versão | Data | Alterado por | Resumo |
 |---|---|---|---|
+| [0.6](#versão-06--em-andamento) | 06.11.2026 – | Alexandre Marcondes Silva | Ajustes após o teste de 06.11.2026 (open topics da 0.5) |
 | [0.5](#versão-05--04112026-a-06112026) | 04.11.2026 – 06.11.2026 | Alexandre Marcondes Silva | Correções do teste de criação da NF, check string da NF Writer, tabela de parâmetros classe A, mensagens de configuração como aviso |
 | [0.4](#versão-04--09102026-a-12102026) | 09.10.2026 – 12.10.2026 | Renato Santos | Versão inicial do código, gerador do DDIC, carga de parâmetros, arquivo de saída CSV |
+
+---
+
+## Versão 0.6 – em andamento
+
+**Alterado por:** Alexandre Marcondes Silva
+**Branch:** `ajustes/v0.6`
+
+| # | Problema (open topic) | Causa | Alteração | Objeto |
+|---|---|---|---|---|
+| OT1 | **CFOP gravado como `593/3A`** (natureza da operação vazia), com o parâmetro `5933AA` e com `5933/AA` | `BAPI_J_1BNFLIN-CFOP` é o CFOP **antigo** (`J_1BCFOP_OLD`, CHAR 5): o valor era cortado em `5933A`. O CFOP atual (código + extensão, `J_1BCFOP` CHAR 10) é o campo `CFOP_10` | CFOP enviado em `CFOP_10`; `/` e `.` removidos do valor do parâmetro (aceita `5933AA`, `5933/AA` ou `5.933/AA`) | `ZSD_BR_NFSE_F01` (`BUILD_BAPI_ITEM`) |
+
+Demais open topics (OT2–OT11) continuam na lista da versão 0.5.
 
 ---
 
