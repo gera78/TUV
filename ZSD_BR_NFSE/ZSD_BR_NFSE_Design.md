@@ -7,8 +7,9 @@
 | Projeto | TÜV – Criação de NF Writer a partir de planilha de NFS-e |
 | Empresa / Local de negócio | 5596 / 0001 (padrão) |
 | Ambiente | SAP S/4HANA (notas da Reforma Tributária em implantação) |
-| Versão | 0.4 – Nova opção: geração do arquivo de saída (CSV no layout da exportação de NFS-e da PMSP) com controle de exportação |
-| Data | 09.10.2026 |
+| Versão | 0.5 – Correções do teste de criação da NF (dump `E_DOCNUM`, 8B 660/685/150/151), check string da NF Writer, tabela de parâmetros classe A, mensagens 023/025 como aviso no Validate only. Histórico: [`CHANGELOG.md`](CHANGELOG.md) |
+| Data | 06.11.2026 (v0.4: 09.10.2026) |
+| Alterado por (v0.5) | Alexandre Marcondes Silva |
 | Developer / IT Responsible / Business Responsible | Renato Santos / Renato Santos / Juliana Reimberg |
 | Status | Em revisão do mockup → aprovação → codificação |
 
@@ -861,7 +862,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 
 ## 17. Entregáveis e próximos passos
 
-1. Revisão deste documento (v0.4) e do mockup – https://claude.ai/artifact/UewVEduzZQ7zAnPXbE3VZj
+1. Revisão deste documento (v0.5) e do mockup – https://claude.ai/artifact/UewVEduzZQ7zAnPXbE3VZj
 2. Aprovação.
 3. Codificação + especificação final do DDIC (transporte de DDIC separado – guideline item 14a).
 4. Documentação do programa para o usuário (SE38, em português) além do header ✅.

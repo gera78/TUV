@@ -32,6 +32,9 @@
 * Change history                                                      *
 * 12.10.2026  Renato Santos                                           *
 * Initial version.                                                    *
+* 06.11.2026  Alexandre Marcondes Silva                               *
+* v0.5 - ZSD_BR_NFSE_PARM with delivery class A; maintenance flag     *
+*   follows the change-logging flag. New message 047.                 *
 *---------------------------------------------------------------------*
 REPORT zsd_br_nfse_ddic_gen.
 
