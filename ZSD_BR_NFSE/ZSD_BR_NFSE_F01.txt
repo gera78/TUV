@@ -1374,6 +1374,9 @@ ENDFORM.
 * 025 - other mandatory NF parameters (CFOP, tax laws, item type,
 *       material usage, material origin, plant) - missing or with an
 *       empty value.
+* Configuration messages never block the line (see ADD_CONFIG_LOG):
+* warning in "Validate only", not written in the real run - there the
+* BAPI return tells what is missing. CV_OK is kept for the interface.
 *----------------------------------------------------------------------*
 FORM check_line_config USING    us_data TYPE zsd_br_nfse_data
                        CHANGING cv_ok   TYPE abap_bool.
@@ -1399,8 +1402,7 @@ FORM check_line_config USING    us_data TYPE zsd_br_nfse_data
     PERFORM get_param USING gc_p_taxtyp_iss gc_col_iss_wht us_data-iss_wht_flag
                       CHANGING lv_value lv_found.
     IF lv_found = abap_false OR lv_value IS INITIAL.
-      PERFORM add_log USING lv_line gc_msgty_error '023' 'ISS' space space.
-      cv_ok = abap_false.
+      PERFORM add_config_log USING lv_line '023' 'ISS' space.
     ENDIF.
   ENDIF.
 
@@ -1408,16 +1410,14 @@ FORM check_line_config USING    us_data TYPE zsd_br_nfse_data
   PERFORM get_param USING gc_p_cfop gc_col_taker_region us_data-taker_region
                     CHANGING lv_value lv_found.
   IF lv_found = abap_false OR lv_value IS INITIAL.
-    PERFORM add_log USING lv_line gc_msgty_error '025' gc_p_cfop us_data-taker_region space.
-    cv_ok = abap_false.
+    PERFORM add_config_log USING lv_line '025' gc_p_cfop us_data-taker_region.
   ENDIF.
 
 * ISS tax law by withheld flag
   PERFORM get_param USING gc_p_taxlw3 gc_col_iss_wht us_data-iss_wht_flag
                     CHANGING lv_value lv_found.
   IF lv_found = abap_false OR lv_value IS INITIAL.
-    PERFORM add_log USING lv_line gc_msgty_error '025' gc_p_taxlw3 us_data-iss_wht_flag space.
-    cv_ok = abap_false.
+    PERFORM add_config_log USING lv_line '025' gc_p_taxlw3 us_data-iss_wht_flag.
   ENDIF.
 
 * Fixed item parameters - must exist AND have a value (an entry with
@@ -1428,14 +1428,31 @@ FORM check_line_config USING    us_data TYPE zsd_br_nfse_data
   LOOP AT lt_fixed INTO DATA(lv_name).
     PERFORM get_param USING lv_name '' gc_wildcard CHANGING lv_value lv_found.
     IF lv_found = abap_false OR lv_value IS INITIAL.
-      PERFORM add_log USING lv_line gc_msgty_error '025' lv_name gc_wildcard space.
-      cv_ok = abap_false.
+      PERFORM add_config_log USING lv_line '025' lv_name gc_wildcard.
     ENDIF.
   ENDLOOP.
 
   IF gv_werks IS INITIAL.
-    PERFORM add_log USING lv_line gc_msgty_error '025' gc_p_werks gs_file-branch space.
-    cv_ok = abap_false.
+    PERFORM add_config_log USING lv_line '025' gc_p_werks gs_file-branch.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  ADD_CONFIG_LOG
+*&---------------------------------------------------------------------*
+* Configuration messages (023 / 025):
+*   Validate only (P_TEST) -> logged as warning (W), line not blocked
+*   Real run               -> not logged; the NF Writer checks of the
+*                             BAPI report the problem in its RETURN
+*----------------------------------------------------------------------*
+FORM add_config_log USING uv_line  TYPE any
+                          uv_msgno TYPE any
+                          uv_v1    TYPE any
+                          uv_v2    TYPE any.
+
+  IF gs_file-test_run = abap_true.
+    PERFORM add_log USING uv_line gc_msgty_warning uv_msgno uv_v1 uv_v2 space.
   ENDIF.
 
 ENDFORM.
@@ -1443,7 +1460,8 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 *&      Form  CHECK_TAX_TYPE
 *&---------------------------------------------------------------------*
-* 023 - a tax column with a value needs its TAXTYP_* parameter.
+* 023 - a tax column with a value needs its TAXTYP_* parameter
+*       (warning in Validate only - see ADD_CONFIG_LOG).
 *----------------------------------------------------------------------*
 FORM check_tax_type USING    uv_line   TYPE any
                              uv_amount TYPE any
@@ -1457,8 +1475,7 @@ FORM check_tax_type USING    uv_line   TYPE any
   IF uv_amount > 0.
     PERFORM get_param USING uv_param '' gc_wildcard CHANGING lv_value lv_found.
     IF lv_found = abap_false OR lv_value IS INITIAL.
-      PERFORM add_log USING uv_line gc_msgty_error '023' uv_label space space.
-      cv_ok = abap_false.
+      PERFORM add_config_log USING uv_line '023' uv_label space.
     ENDIF.
   ENDIF.
 

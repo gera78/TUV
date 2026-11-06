@@ -486,8 +486,8 @@ Configurações técnicas: classe de entrega **A** (aplicação – dados mestre
 | 016 | Município preenchido e 2 primeiros dígitos IBGE ≠ UF (tabela de 27 UFs) ou código ≠ 7 dígitos | V, W |
 | 017 ✅ | Duplicidade critério A – ver seção 10 | F |
 | 026 ✅ | Duplicidade critério B – ver seção 10 | B, H, I, U |
-| 023 ✅ | Coluna de imposto com valor > 0 sem `TAXTYP_*` configurado (colunas J, K, O, P só verificadas com `SEND_CBS_IBS = X`) | J–Q, S |
-| 025 ✅ | Parâmetro obrigatório não configurado (CFOP, TAXLW*, ITMTYP, MATUSE…) | – |
+| 023 ✅ | Coluna de imposto com valor > 0 sem `TAXTYP_*` configurado (colunas J, K, O, P só verificadas com `SEND_CBS_IBS = X`). **Aviso só no Validate only**; na execução real não é gerada – vale o retorno da BAPI | J–Q, S |
+| 025 ✅ | Parâmetro obrigatório não configurado ou vazio (CFOP, TAXLW*, ITMTYP, MATUSE, MATORG, WERKS). **Aviso só no Validate only**; na execução real não é gerada – vale o retorno da BAPI | – |
 
 **Avisos (tipo W – não bloqueiam; semáforo amarelo)** ✅
 
@@ -803,9 +803,9 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | 020 | Customer &1 is blocked | ✅ |
 | 021 | No authorization for company code &1 / transaction &2 | ✅ |
 | 022 | Nota Fiscal &1 created successfully | ✅ |
-| 023 | Tax type not configured for &1 | ✅ |
+| 023 | Tax type not configured for &1 | ✅ (W, só Validate only) |
 | 024 | Service date missing or invalid | ✅ |
-| 025 | Parameter &1 not configured for value &2 | ✅ |
+| 025 | Parameter &1 not configured for value &2 | ✅ (W, só Validate only) |
 | 026 | Probable duplicate of file &1 line &2 (NF &3): same customer, date, amount and service | ✅ |
 | 027 | Processing cancelled by user (duplicates found) | ✅ |
 | 028 | Warning: customer &1 address in file differs from master data | ✅ (W) |
