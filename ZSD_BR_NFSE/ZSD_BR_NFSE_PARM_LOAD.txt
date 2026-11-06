@@ -42,6 +42,8 @@
 * Initial version.                                                    *
 * 06.11.2026  Alexandre Marcondes Silva                               *
 * v0.5 - Proposal for parameter HDR_TEXT_ID (NF header text ID).      *
+* v0.7 - Proposals: TAXLW3 N = I01, TAXTYP_ISS N = ISSA, NF_SERIES,   *
+*   COLLCODE for ICSQ / IIRW.                                         *
 *---------------------------------------------------------------------*
 REPORT zsd_br_nfse_parm_load.
 
@@ -176,6 +178,9 @@ FORM build_proposals.
   PERFORM add USING 'LOG_RETENTION_YEARS' '' gc_wildcard '5'     abap_false 'Purge default (LGPD) - validate with DPO'.
   PERFORM add USING 'MATORG'              '' gc_wildcard '0'     abap_false 'Material origin: national'.
   PERFORM add USING 'HDR_TEXT_ID'         '' gc_wildcard ''      abap_true  'NF header text ID (J1B3N); empty = header message'.
+  PERFORM add USING 'NF_SERIES'           '' gc_wildcard '1'     abap_true  'NF series (empty = series of NF type) - confirm'.
+  PERFORM add USING 'COLLCODE'            '' 'ICSQ'      '5952'  abap_true  'Collection code CSLL withheld (as SD NF) - confirm'.
+  PERFORM add USING 'COLLCODE'            '' 'IIRW'      '1708'  abap_true  'Collection code IRRF withheld (as SD NF) - confirm'.
 
 *--- 8.2 NF Writer item parameters - tax consultant
   PERFORM add USING 'ITMTYP'         '' gc_wildcard '' abap_true 'NF item type'.
@@ -199,9 +204,9 @@ FORM build_proposals.
   PERFORM add USING 'CFOP' gc_col_region gc_wildcard '6933AA' abap_false 'CFOP outside the state - confirm'.
 
   PERFORM add USING 'TAXTYP_ISS' gc_col_isswht 'Y' '' abap_true 'ISS tax type - ISS withheld'.
-  PERFORM add USING 'TAXTYP_ISS' gc_col_isswht 'N' '' abap_true 'ISS tax type - ISS due'.
+  PERFORM add USING 'TAXTYP_ISS' gc_col_isswht 'N' 'ISSA' abap_true 'ISS tax type - ISS due (as SD NF 226744) - confirm'.
   PERFORM add USING 'TAXLW3'     gc_col_isswht 'Y' '' abap_true 'ISS tax law - ISS withheld'.
-  PERFORM add USING 'TAXLW3'     gc_col_isswht 'N' '' abap_true 'ISS tax law - ISS due'.
+  PERFORM add USING 'TAXLW3'     gc_col_isswht 'N' 'I01' abap_false 'ISS tax law - ISS due (as SD NF 226744)'.
 
   lt_codes = VALUE #( ( '1902' ) ( '1805' ) ( '1694' ) ( '3115' ) ).
   LOOP AT lt_codes INTO DATA(lv_code).

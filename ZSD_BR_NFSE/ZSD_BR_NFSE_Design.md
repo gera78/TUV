@@ -76,7 +76,7 @@ Ler uma planilha Excel (.xlsx/.xlsm) do computador do usuário, gravar o conteú
 - As validações de uma linha **não param no primeiro erro**: todos os erros e avisos da linha são gravados.
 - Cada NF é confirmada individualmente – um erro numa linha não desfaz as anteriores.
 - **LUW única** ✅: o status S e o DOCNUM são gravados **antes** do `BAPI_TRANSACTION_COMMIT`, de modo que NF e log são confirmados juntos (nunca existe NF sem registro – evita reemissão).
-- **Validate only (`P_TEST`)**: executa os passos 1–6 e grava o log; linhas válidas ficam com status V; não há bloqueio nem BAPI.
+- **Validate only (`P_TEST`)**: executa os passos 1–6 e grava o log; linhas válidas ficam com status V; não há bloqueio. v0.7: a BAPI é chamada em **simulação** (`SIMULATION = 'X'` + rollback, nenhuma NF criada) e as mensagens dela entram no log como aviso.
 
 ---
 
@@ -420,6 +420,7 @@ Configurações técnicas: classe de entrega **A** (aplicação – dados mestre
 | ITMTYP | (tipo de item) | Sim | Item da NF |
 | MATUSE | (utilização do material) | Sim | Item da NF |
 | MATORG | 0 | Sim | Origem do material |
+| NF_SERIES | 1 | Não | v0.7 – série da NF; vazio = série do tipo de NF (`J_1BAA`) |
 | HDR_TEXT_ID | (ID de texto do cabeçalho da NF) | Não | ⏳ v0.5 – ID do texto de cabeçalho exibido na J1B3N para a discriminação dos serviços. Vazio = texto vai para `OBJ_HEADER_MSG` |
 | WERKS | (centro) | Não | Vazio → derivado do local de negócio (`J_1BT001WV`) |
 | TAXGRP_REQ_01 | X | Não | Grupo 01 obrigatório (msg 014) |
@@ -859,6 +860,7 @@ Barra: **Select all · Deselect all · Export CSV** · Filter · Sort · Change 
 | P26 | Teste de 06/11/2026 – criação da NF com 8B 150 (situação tributária faltando) e 8B 151 (NCM faltando) no item de serviço. A situação tributária ICMS/IPI vem das leis fiscais TAXLW1/TAXLW2 (estavam vazias no parâmetro); o NCM vem do cadastro do material/centro. Definir: preencher TAXLW1/TAXLW2 e o NCM do material de serviço, ou enviar o item como item de ISS / desligar os checks 27 e 28 (`BUILD_BAPI_NFCHECK`) | ✅ checks 13, 27 e 28 desligados no `BUILD_BAPI_NFCHECK`, passado à BAPI no parâmetro `NFCHECK` | Validação 025 agora bloqueia parâmetro com valor vazio (antes passava e gerava 8B 660 para MATUSE); BWKEY do item preenchido com T001W-BWKEY do centro (8B 685) |
 | P27 | Comparação com NF de serviço correta do SD (226744) × NFs de teste 226751–753 (06/11/2026): total 2.100 em vez de 2.000, retenções sem flag, CFOP gravado `593/3A`, lei ISS `ISS`, parceiro AG | ✅ código v0.5: `TMISS`/`INCLTX`, flags `WITHHOLD`/`TAXINNET` nas retenções, TAXLW1/2 não enviadas, parceiro RE. ⏳ parâmetros: CFOP no formato `5933/AA` / `6933/AA`, `TAXLW3 = I01`, `TAXTYP_ISS` (ISSA × ISSE) com o fiscal; série / NFNUM (P1, P1a) e código de recolhimento das retenções a confirmar | – |
 | P28 | Open topics após o teste de 06/11/2026 (NF 226758): CFOP `593/3A` (campo `CFOP` antigo de 5 posições – usar `CFOP_10`), lei ISS `I01`, tipo de ISS, código de recolhimento, descrição do material em PT, série/NFNUM, `HDR_TEXT_ID`, `infCpl` (BAdI), Validate only com simulação | ⏳ lista OT1–OT11 em [`CHANGELOG.md`](CHANGELOG.md) | – |
+| P29 | v0.7: Validate only simula a criação da NF (`SIMULATION = 'X'`) e mostra as mensagens da BAPI como aviso; código de recolhimento por parâmetro `COLLCODE` (Z_INPUT = tipo de imposto, ex.: ICSQ 5952, IIRW 1708) | ⏳ confirmar no sistema: `SIMULATION` aceita `X`, campo `COLLCODE` na `BAPI_J_1BNFSTX`; valores com o fiscal | – |
 | P20 | Extensão e separador do arquivo de saída | ✅ `.csv`, separado por `;` | – |
 | P21 | Passo adicional que o cliente disse ter esquecido de mencionar | ⏳ cliente | – |
 | P22 | Quem envia os RPS à Prefeitura | ✅ SAP padrão, J1BNFE (passo 03 do fluxo do cliente) – fora do escopo deste desenvolvimento. O RPS é numerado na planilha ✅ e vai para `NFNUM` via BAPI; o J1BNFE apenas envia | – |

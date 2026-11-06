@@ -44,6 +44,12 @@
 * v0.6 - CFOP sent in BAPI_J_1BNFLIN-CFOP_10 (CHAR 10) instead of     *
 *   CFOP (old CHAR 5 field - CFOP stored as 593/3A); separators       *
 *   removed from the parameter value.                                 *
+* 06.11.2026  Alexandre Marcondes Silva                               *
+* v0.7 - Validate only simulates the NF creation (BAPI SIMULATION),   *
+*   BAPI messages as warnings (SIMULATE_NF).                          *
+* - Material description in Portuguese (logon language as fallback).  *
+* - Optional parameters NF_SERIES (series) and COLLCODE (official     *
+*   collection code per tax type, SET_COLLCODE).                      *
 *---------------------------------------------------------------------*
 
 *&---------------------------------------------------------------------*
@@ -1111,14 +1117,19 @@ FORM prefetch_master_data.
         AND werks = @gv_werks
         AND lvorm = @space
       INTO TABLE @DATA(lt_marc).
-    SELECT matnr, maktx FROM makt
+*   Description in the language of the NF (Portuguese); logon language
+*   only if the material has no Portuguese text
+    SELECT matnr, spras, maktx FROM makt
       FOR ALL ENTRIES IN @lt_matnr
       WHERE matnr = @lt_matnr-matnr
-        AND spras = @sy-langu
+        AND ( spras = @gc_nf_langu OR spras = @sy-langu )
       INTO TABLE @DATA(lt_makt).
     LOOP AT gt_material ASSIGNING FIELD-SYMBOL(<ls_mat>).
       <ls_mat>-in_plant = xsdbool( line_exists( lt_marc[ matnr = <ls_mat>-matnr ] ) ).
-      READ TABLE lt_makt INTO DATA(ls_makt) WITH KEY matnr = <ls_mat>-matnr.
+      READ TABLE lt_makt INTO DATA(ls_makt) WITH KEY matnr = <ls_mat>-matnr spras = gc_nf_langu.
+      IF sy-subrc <> 0.
+        READ TABLE lt_makt INTO ls_makt WITH KEY matnr = <ls_mat>-matnr.
+      ENDIF.
       IF sy-subrc = 0.
         <ls_mat>-maktx = ls_makt-maktx.
       ENDIF.
@@ -1705,9 +1716,81 @@ ENDFORM.
 FORM mark_validated.
 
   LOOP AT gt_data ASSIGNING FIELD-SYMBOL(<ls_data>) WHERE status = gc_line_new.
+*   NF creation simulated: messages of the NF Writer checks as warnings
+    PERFORM simulate_nf USING <ls_data>.
     <ls_data>-status = gc_line_validated.
   ENDLOOP.
   PERFORM save_line_status.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SIMULATE_NF
+*&---------------------------------------------------------------------*
+* Validate only: the NF is built exactly as in CREATE_NF and the BAPI
+* is called with SIMULATION = 'X', followed by a rollback - no NF is
+* created. Every E/A message of the BAPI (NF Writer checks: CFOP, tax
+* laws, tax types, plant, ...) is logged on the line as a WARNING, so
+* problems that until now only appeared in the real run show up in
+* Validate only. The line status stays V. A failure of the call itself
+* is logged as warning 047 (no dump).
+*----------------------------------------------------------------------*
+FORM simulate_nf USING us_data TYPE zsd_br_nfse_data.
+
+  DATA: ls_header  TYPE bapi_j_1bnfdoc,
+        lt_partner TYPE STANDARD TABLE OF bapi_j_1bnfnad,
+        lt_item    TYPE STANDARD TABLE OF bapi_j_1bnflin,
+        lt_tax     TYPE STANDARD TABLE OF bapi_j_1bnfstx,
+        lt_text    TYPE STANDARD TABLE OF bapi_j_1bnfftx,
+        lt_htext   TYPE STANDARD TABLE OF bapi_j_1bnftextheader,
+        lt_return  TYPE STANDARD TABLE OF bapiret2,
+        lv_docnum  TYPE j_1bdocnum,
+        lv_nfcheck TYPE c LENGTH 47,
+        ls_nfcheck TYPE bapi_j_1bnfcheck,
+        lv_text    TYPE c LENGTH 150.
+
+  PERFORM build_bapi_header  USING us_data CHANGING ls_header lt_partner.
+  PERFORM build_bapi_item    USING us_data CHANGING lt_item.
+  PERFORM build_bapi_taxes   USING us_data CHANGING lt_tax.
+  PERFORM build_bapi_texts   USING us_data CHANGING lt_text lt_htext.
+  PERFORM build_bapi_nfcheck USING us_data CHANGING lv_nfcheck.
+  ls_nfcheck-chekcon = lv_nfcheck.
+
+  TRY.
+      CALL FUNCTION 'BAPI_J_1B_NF_CREATEFROMDATA'
+        EXPORTING
+          obj_header      = ls_header
+          nfcheck         = ls_nfcheck
+          simulation      = gc_simulate
+        IMPORTING
+          e_docnum        = lv_docnum
+        TABLES
+          obj_partner     = lt_partner
+          obj_item        = lt_item
+          obj_item_tax    = lt_tax
+          obj_header_msg  = lt_text
+          obj_header_text = lt_htext
+          return          = lt_return
+        EXCEPTIONS
+          error_message   = 1
+          OTHERS          = 2.
+      IF sy-subrc <> 0 AND sy-msgid IS NOT INITIAL.
+        PERFORM add_log_full USING us_data-line_id gc_msgty_warning sy-msgid sy-msgno
+                                   sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+      ENDIF.
+    CATCH cx_sy_dyn_call_error INTO DATA(lo_call_error).
+      lv_text = lo_call_error->get_text( ).
+      PERFORM add_log_full USING us_data-line_id gc_msgty_warning gc_msgid '047'
+                                 'BAPI_J_1B_NF_CREATEFROMDATA'
+                                 lv_text(50) lv_text+50(50) lv_text+100(50).
+  ENDTRY.
+
+  LOOP AT lt_return INTO DATA(ls_return) WHERE type = 'E' OR type = 'A'.
+    PERFORM add_log_full USING us_data-line_id gc_msgty_warning ls_return-id ls_return-number
+      ls_return-message_v1 ls_return-message_v2 ls_return-message_v3 ls_return-message_v4.
+  ENDLOOP.
+
+  CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
 
 ENDFORM.
 
@@ -1899,6 +1982,12 @@ FORM build_bapi_header USING    us_data    TYPE zsd_br_nfse_data
   PERFORM get_component USING gs_j1baa 'MODEL' CHANGING lv_value.
   PERFORM set_component USING 'MODEL' lv_value CHANGING cs_header.
   PERFORM get_component USING gs_j1baa 'SERIES' CHANGING lv_value.
+* Parameter NF_SERIES (optional) overrides the series of the NF type
+  DATA(lv_series) = VALUE string( ).
+  PERFORM get_param_text USING gc_p_nf_series '' CHANGING lv_series.
+  IF lv_series IS NOT INITIAL.
+    lv_value = lv_series.
+  ENDIF.
   PERFORM set_component USING 'SERIES' lv_value CHANGING cs_header.
 
   ls_partner-parvw  = gc_partner_role.
@@ -2026,6 +2115,7 @@ FORM build_bapi_taxes USING    us_data TYPE zsd_br_nfse_data
     IF us_data-iss_wht_flag = gc_yes.
       PERFORM set_withheld CHANGING ls_tax.
     ENDIF.
+    PERFORM set_collcode CHANGING ls_tax.
     APPEND ls_tax TO ct_tax.
   ENDIF.
 
@@ -2063,6 +2153,7 @@ FORM append_tax USING    uv_base     TYPE zsd_br_nfse_service_amount
   IF uv_withheld = abap_true.
     PERFORM set_withheld CHANGING ls_tax.
   ENDIF.
+  PERFORM set_collcode CHANGING ls_tax.
   APPEND ls_tax TO ct_tax.
 
 ENDFORM.
@@ -2079,6 +2170,27 @@ FORM set_withheld CHANGING cs_tax TYPE bapi_j_1bnfstx.
 
   PERFORM set_component USING 'WITHHOLD' abap_true CHANGING cs_tax.
   PERFORM set_component USING 'TAXINNET' abap_true CHANGING cs_tax.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  SET_COLLCODE
+*&---------------------------------------------------------------------*
+* Official collection code of the tax line ("Off. Collection Code",
+* e.g. 5952 CSLL/PIS/COFINS withheld, 1708 IRRF) from the optional
+* parameter COLLCODE: FILE_COLUMN_NAME empty, Z_INPUT = tax type (or
+* "*"). No parameter = field not sent. Set only if the field exists in
+* BAPI_J_1BNFSTX (SET_COMPONENT).
+*----------------------------------------------------------------------*
+FORM set_collcode CHANGING cs_tax TYPE bapi_j_1bnfstx.
+
+  DATA: lv_code  TYPE string,
+        lv_found TYPE abap_bool.
+
+  PERFORM get_param USING gc_p_collcode '' cs_tax-taxtyp CHANGING lv_code lv_found.
+  IF lv_found = abap_true AND lv_code IS NOT INITIAL.
+    PERFORM set_component USING 'COLLCODE' lv_code CHANGING cs_tax.
+  ENDIF.
 
 ENDFORM.
 

@@ -21,6 +21,8 @@
 * v0.5 - GV_BWKEY: valuation area of the item plant (8B 685).         *
 * - GC_P_HDR_TEXT_ID, GC_HDR_TEXT_WIDTH (NF header text).             *
 * - GC_PARTNER_ROLE = RE (bill-to party) instead of AG.               *
+* 06.11.2026  Alexandre Marcondes Silva                               *
+* v0.7 - GC_NF_LANGU, GC_SIMULATE, GC_P_NF_SERIES, GC_P_COLLCODE.     *
 *---------------------------------------------------------------------*
 
 TYPE-POOLS: icon.
@@ -62,6 +64,8 @@ CONSTANTS:
   gc_item_number  TYPE j_1bnflin-itmnum VALUE '000010',
   gc_text_width   TYPE i        VALUE 72,
   gc_hdr_text_width TYPE i      VALUE 132,   " BAPI_J_1BNFTEXTHEADER-TEXT_LINE
+  gc_nf_langu     TYPE spras    VALUE 'P',   " language of the NF (material description)
+  gc_simulate     TYPE c LENGTH 1 VALUE 'X', " BAPI parameter SIMULATION (Validate only)
   gc_header_row   TYPE i        VALUE 2,     " Excel row holding the column names
   gc_first_row    TYPE i        VALUE 3,     " first Excel row holding data
   gc_last_column  TYPE i        VALUE 54,    " A .. BB
@@ -117,6 +121,8 @@ CONSTANTS:
   gc_p_matuse        TYPE fieldname VALUE 'MATUSE',
   gc_p_matorg        TYPE fieldname VALUE 'MATORG',
   gc_p_hdr_text_id   TYPE fieldname VALUE 'HDR_TEXT_ID',
+  gc_p_nf_series     TYPE fieldname VALUE 'NF_SERIES',
+  gc_p_collcode      TYPE fieldname VALUE 'COLLCODE',
   gc_p_taxlw1        TYPE fieldname VALUE 'TAXLW1',
   gc_p_taxlw2        TYPE fieldname VALUE 'TAXLW2',
   gc_p_taxlw3        TYPE fieldname VALUE 'TAXLW3',
