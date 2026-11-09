@@ -421,6 +421,7 @@ Configurações técnicas: classe de entrega **A** (aplicação – dados mestre
 | MATUSE | (utilização do material) | Sim | Item da NF |
 | MATORG | 0 | Sim | Origem do material |
 | NF_SERIES | 1 | Não | v0.7 – série da NF; vazio = série do tipo de NF (`J_1BAA`) |
+| CBSIBS_TAXSIT / CBSIBS_CST | A01 / 000 | Não | v0.7 – situação tributária e código CBS/IBS do item (`OBJ_ITEM_ADD`) – issue #15, confirmar com o fiscal |
 | HDR_TEXT_ID | (ID de texto do cabeçalho da NF) | Não | ⏳ v0.5 – ID do texto de cabeçalho exibido na J1B3N para a discriminação dos serviços. Vazio = texto vai para `OBJ_HEADER_MSG` |
 | WERKS | (centro) | Não | Vazio → derivado do local de negócio (`J_1BT001WV`) |
 | TAXGRP_REQ_01 | X | Não | Grupo 01 obrigatório (msg 014) |
@@ -571,7 +572,7 @@ Endereço e CNPJ vêm do cadastro SAP; os dados de tomador da planilha são usad
 | TAXLW1 / TAXLW2 / TAXLW4 / TAXLW5 | Parâmetros |
 | TAXLW3 | Parâmetro TAXLW3 (por ISS Retido) |
 | XPED | PO_NUMBER |
-| Campos da reforma (cClassTrib, cIndOp, NBS…) | Colunas AY–BB (cClassTrib: padrão por parâmetro se vazio). **Preenchidos dinamicamente**: só se o campo existir na estrutura da BAPI (notas em implantação) 💡✅ |
+| Campos da reforma (cClassTrib, cIndOp, NBS…) | Colunas AY–BB (cClassTrib: padrão por parâmetro se vazio). **Preenchidos dinamicamente**: só se o campo existir na estrutura da BAPI (notas em implantação) 💡✅. v0.7: enviados em `OBJ_ITEM_ADD` (`BAPI_J_1BNFLIN_ADD`) – `TAXSITUATION`, `CST`, `CCLASSTRIB`, `NBS`, `CINDOP` (issue #15) |
 
 ### 11.4 `OBJ_ITEM_TAX` – uma linha por imposto com valor > 0 ✅
 

@@ -50,6 +50,8 @@
 * - Material description in Portuguese (logon language as fallback).  *
 * - Optional parameters NF_SERIES (series) and COLLCODE (official     *
 *   collection code per tax type, SET_COLLCODE).                      *
+* - CBS/IBS tax situation, code and classification in OBJ_ITEM_ADD    *
+*   (BAPI_J_1BNFLIN_ADD); parameters CBSIBS_TAXSIT / CBSIBS_CST.      *
 *---------------------------------------------------------------------*
 
 *&---------------------------------------------------------------------*
@@ -1740,6 +1742,7 @@ FORM simulate_nf USING us_data TYPE zsd_br_nfse_data.
   DATA: ls_header  TYPE bapi_j_1bnfdoc,
         lt_partner TYPE STANDARD TABLE OF bapi_j_1bnfnad,
         lt_item    TYPE STANDARD TABLE OF bapi_j_1bnflin,
+        lt_item_add TYPE STANDARD TABLE OF bapi_j_1bnflin_add,
         lt_tax     TYPE STANDARD TABLE OF bapi_j_1bnfstx,
         lt_text    TYPE STANDARD TABLE OF bapi_j_1bnfftx,
         lt_htext   TYPE STANDARD TABLE OF bapi_j_1bnftextheader,
@@ -1750,7 +1753,7 @@ FORM simulate_nf USING us_data TYPE zsd_br_nfse_data.
         lv_text    TYPE c LENGTH 150.
 
   PERFORM build_bapi_header  USING us_data CHANGING ls_header lt_partner.
-  PERFORM build_bapi_item    USING us_data CHANGING lt_item.
+  PERFORM build_bapi_item    USING us_data CHANGING lt_item lt_item_add.
   PERFORM build_bapi_taxes   USING us_data CHANGING lt_tax.
   PERFORM build_bapi_texts   USING us_data CHANGING lt_text lt_htext.
   PERFORM build_bapi_nfcheck USING us_data CHANGING lv_nfcheck.
@@ -1767,6 +1770,7 @@ FORM simulate_nf USING us_data TYPE zsd_br_nfse_data.
         TABLES
           obj_partner     = lt_partner
           obj_item        = lt_item
+          obj_item_add    = lt_item_add
           obj_item_tax    = lt_tax
           obj_header_msg  = lt_text
           obj_header_text = lt_htext
@@ -1860,6 +1864,7 @@ FORM create_nf CHANGING cs_data TYPE zsd_br_nfse_data.
   DATA: ls_header  TYPE bapi_j_1bnfdoc,
         lt_partner TYPE STANDARD TABLE OF bapi_j_1bnfnad,
         lt_item    TYPE STANDARD TABLE OF bapi_j_1bnflin,
+        lt_item_add TYPE STANDARD TABLE OF bapi_j_1bnflin_add,
         lt_tax     TYPE STANDARD TABLE OF bapi_j_1bnfstx,
         lt_text    TYPE STANDARD TABLE OF bapi_j_1bnfftx,
         lt_htext   TYPE STANDARD TABLE OF bapi_j_1bnftextheader,
@@ -1871,7 +1876,7 @@ FORM create_nf CHANGING cs_data TYPE zsd_br_nfse_data.
         lv_call_ok TYPE abap_bool VALUE abap_true.
 
   PERFORM build_bapi_header  USING cs_data CHANGING ls_header lt_partner.
-  PERFORM build_bapi_item    USING cs_data CHANGING lt_item.
+  PERFORM build_bapi_item    USING cs_data CHANGING lt_item lt_item_add.
   PERFORM build_bapi_taxes   USING cs_data CHANGING lt_tax.
   PERFORM build_bapi_texts   USING cs_data CHANGING lt_text lt_htext.
 
@@ -1890,6 +1895,7 @@ FORM create_nf CHANGING cs_data TYPE zsd_br_nfse_data.
         TABLES
           obj_partner    = lt_partner
           obj_item       = lt_item
+          obj_item_add   = lt_item_add
           obj_item_tax   = lt_tax
           obj_header_msg = lt_text
           obj_header_text = lt_htext
@@ -2005,10 +2011,12 @@ ENDFORM.
 * Optional / tax reform fields are set only if they exist (see
 * SET_COMPONENT).
 *----------------------------------------------------------------------*
-FORM build_bapi_item USING    us_data TYPE zsd_br_nfse_data
-                     CHANGING ct_item TYPE STANDARD TABLE.
+FORM build_bapi_item USING    us_data     TYPE zsd_br_nfse_data
+                     CHANGING ct_item     TYPE STANDARD TABLE
+                              ct_item_add TYPE STANDARD TABLE.
 
-  DATA: ls_item  TYPE bapi_j_1bnflin,
+  DATA: ls_item     TYPE bapi_j_1bnflin,
+        ls_item_add TYPE bapi_j_1bnflin_add,
         lv_matnr TYPE matnr,
         lv_value TYPE string,
         lv_found TYPE abap_bool.
@@ -2063,17 +2071,31 @@ FORM build_bapi_item USING    us_data TYPE zsd_br_nfse_data
 
   PERFORM set_component USING 'XPED' us_data-po_number CHANGING ls_item.
 
-* Tax reform fields (filled only once the SAP notes add them)
+  APPEND ls_item TO ct_item.
+
+* Tax reform fields (CBS/IBS) - item additions BAPI_J_1BNFLIN_ADD
+* (parameter OBJ_ITEM_ADD), not BAPI_J_1BNFLIN: until v0.7 they were set
+* in OBJ_ITEM and never reached the NF (Taxes II tab empty, issue #15).
+* Names follow the IS fields of the same structure (TAXSITUATIONIS,
+* CSTIS, CCLASSTRIBIS); every field is set only if it exists.
+*   TAXSITUATION - internal tax situation CBS/IBS, parameter CBSIBS_TAXSIT
+*   CST          - tax situation code CBS/IBS, parameter CBSIBS_CST
+*   CCLASSTRIB   - tax classification code: column AY, else parameter
+*                  CCLASSTRIB by service code
+  PERFORM set_component USING 'ITMNUM' gc_item_number CHANGING ls_item_add.
+  PERFORM get_param_text USING gc_p_cbsibs_taxsit '' CHANGING lv_value.
+  PERFORM set_component USING 'TAXSITUATION' lv_value CHANGING ls_item_add.
+  PERFORM get_param_text USING gc_p_cbsibs_cst '' CHANGING lv_value.
+  PERFORM set_component USING 'CST' lv_value CHANGING ls_item_add.
   lv_value = us_data-tax_class_main.
   IF lv_value IS INITIAL.
     PERFORM get_param USING gc_p_cclasstrib gc_col_service_code us_data-service_code
                       CHANGING lv_value lv_found.
   ENDIF.
-  PERFORM set_component USING 'CCLASSTRIB' lv_value CHANGING ls_item.
-  PERFORM set_component USING 'NBS' us_data-nbs_code CHANGING ls_item.
-  PERFORM set_component USING 'CINDOP' us_data-oper_ind_code CHANGING ls_item.
-
-  APPEND ls_item TO ct_item.
+  PERFORM set_component USING 'CCLASSTRIB' lv_value CHANGING ls_item_add.
+  PERFORM set_component USING 'NBS' us_data-nbs_code CHANGING ls_item_add.
+  PERFORM set_component USING 'CINDOP' us_data-oper_ind_code CHANGING ls_item_add.
+  APPEND ls_item_add TO ct_item_add.
 
 ENDFORM.
 

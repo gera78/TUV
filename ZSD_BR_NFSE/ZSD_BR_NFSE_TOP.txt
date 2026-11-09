@@ -23,6 +23,7 @@
 * - GC_PARTNER_ROLE = RE (bill-to party) instead of AG.               *
 * 06.11.2026  Alexandre Marcondes Silva                               *
 * v0.7 - GC_NF_LANGU, GC_SIMULATE, GC_P_NF_SERIES, GC_P_COLLCODE.     *
+* - GC_P_CBSIBS_TAXSIT, GC_P_CBSIBS_CST (issue #15).                  *
 *---------------------------------------------------------------------*
 
 TYPE-POOLS: icon.
@@ -129,6 +130,8 @@ CONSTANTS:
   gc_p_taxlw4        TYPE fieldname VALUE 'TAXLW4',
   gc_p_taxlw5        TYPE fieldname VALUE 'TAXLW5',
   gc_p_cclasstrib    TYPE fieldname VALUE 'CCLASSTRIB',
+  gc_p_cbsibs_taxsit TYPE fieldname VALUE 'CBSIBS_TAXSIT',  " internal tax situation CBS/IBS (e.g. A01)
+  gc_p_cbsibs_cst    TYPE fieldname VALUE 'CBSIBS_CST',     " tax situation code CBS/IBS (e.g. 000)
   gc_p_taxtyp_iss    TYPE fieldname VALUE 'TAXTYP_ISS',
   gc_p_taxtyp_cbs    TYPE fieldname VALUE 'TAXTYP_CBS',
   gc_p_taxtyp_ibs    TYPE fieldname VALUE 'TAXTYP_IBS',
