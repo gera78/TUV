@@ -2077,8 +2077,8 @@ FORM build_bapi_item USING    us_data     TYPE zsd_br_nfse_data
 * Tax reform fields (CBS/IBS) - item additions BAPI_J_1BNFLIN_ADD
 * (parameter OBJ_ITEM_ADD), not BAPI_J_1BNFLIN: until v0.7 they were set
 * in OBJ_ITEM and never reached the NF (Taxes II tab empty, issue #15).
-* Names follow the IS fields of the same structure (TAXSITUATIONIS,
-* CSTIS, CCLASSTRIBIS); every field is set only if it exists.
+* TAXSITUATION, CST, CCLASSTRIB and CCLASSTRIBREG confirmed in SE11;
+* every field is set only if it exists (NBS / CINDOP not confirmed).
 *   TAXSITUATION - internal tax situation CBS/IBS, parameter CBSIBS_TAXSIT
 *   CST          - tax situation code CBS/IBS, parameter CBSIBS_CST
 *   CCLASSTRIB   - tax classification code: column AY, else parameter
