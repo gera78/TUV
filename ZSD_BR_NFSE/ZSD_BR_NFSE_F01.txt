@@ -52,6 +52,7 @@
 *   collection code per tax type, SET_COLLCODE).                      *
 * - CBS/IBS tax situation, code and classification in OBJ_ITEM_ADD    *
 *   (BAPI_J_1BNFLIN_ADD); parameters CBSIBS_TAXSIT / CBSIBS_CST.      *
+*   CCLASSTRIBREG from column BB (regular taxation).                  *
 *---------------------------------------------------------------------*
 
 *&---------------------------------------------------------------------*
@@ -2081,7 +2082,8 @@ FORM build_bapi_item USING    us_data     TYPE zsd_br_nfse_data
 *   TAXSITUATION - internal tax situation CBS/IBS, parameter CBSIBS_TAXSIT
 *   CST          - tax situation code CBS/IBS, parameter CBSIBS_CST
 *   CCLASSTRIB   - tax classification code: column AY, else parameter
-*                  CCLASSTRIB by service code
+*                  CCLASSTRIB by service code (confirmed in SE11)
+*   CCLASSTRIBREG - classification code for regular taxation: column BB
   PERFORM set_component USING 'ITMNUM' gc_item_number CHANGING ls_item_add.
   PERFORM get_param_text USING gc_p_cbsibs_taxsit '' CHANGING lv_value.
   PERFORM set_component USING 'TAXSITUATION' lv_value CHANGING ls_item_add.
@@ -2093,6 +2095,7 @@ FORM build_bapi_item USING    us_data     TYPE zsd_br_nfse_data
                       CHANGING lv_value lv_found.
   ENDIF.
   PERFORM set_component USING 'CCLASSTRIB' lv_value CHANGING ls_item_add.
+  PERFORM set_component USING 'CCLASSTRIBREG' us_data-tax_class_reg CHANGING ls_item_add.
   PERFORM set_component USING 'NBS' us_data-nbs_code CHANGING ls_item_add.
   PERFORM set_component USING 'CINDOP' us_data-oper_ind_code CHANGING ls_item_add.
   APPEND ls_item_add TO ct_item_add.
