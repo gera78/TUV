@@ -14,6 +14,7 @@ Testes de 06.11.2026 (empresa 5596, local de negócio 0001, tipo de NF Z2, clien
 | 226756 | 06.11 16:50 | 0.5 + item de serviço | `EXPORT_20261106_165420.xlsx` | `EXPORT_20261106_170353.xlsx` | – | Alterada manualmente às 16:52 (CFOP 5933/AA) – não usar como evidência do programa |
 | **226758** | 06.11 17:29 | 0.5 final | `EXPORT_20261106_173216.xlsx` | `EXPORT_20261106_173304.xlsx` | `EXPORT_20261106_173356.xlsx` | Criada pelo programa, sem alteração posterior |
 | **226759** / **226761** | 06.11 17:52 / 19:17 | 0.6 (CFOP_10) | `EXPORT_20261106_195409.xlsx` | `EXPORT_20261106_195456.xlsx` | `EXPORT_20261106_195524.xlsx` | Criadas pelo programa; parâmetro `TAXLW3` = I02 |
+| **226771** | 10.11 18:47 | 0.7 (OBJ_ITEM_ADD, `SEND_CBS_IBS` ligado) | `EXPORT_20261110_184901.xlsx` | `EXPORT_20261110_184934.xlsx` | `EXPORT_20261110_185002.xlsx` | Criada pelo programa; CBS/IBS enviados |
 
 ## 2. Evidência por solução
 
@@ -102,6 +103,33 @@ A testar: Validate only com parâmetro faltando → 025 tipo W, linha com status
 
 Arquivos: antes `EXPORT_20261106_173216.xlsx`, `EXPORT_20261106_173304.xlsx`; depois `EXPORT_20261106_195409.xlsx`, `EXPORT_20261106_195456.xlsx`.
 
+### #15 – Campos CBS/IBS do item (aba Taxes II) – PR #3
+
+| Campo (`J_1BNFLIN`) | NF do SD 226744 | Antes – 226758 / 226764 | **Depois – 226771** |
+|---|---|---|---|
+| Tax Situation for CBS and IBS | A01 | vazio ❌ | **A01** ✅ |
+| Tax Situation Code for CBS and IBS | 000 | vazio ❌ | **000** ✅ |
+| Tax Classification Code for CBS and IBS | 000001 | vazio ❌ | **000001** ✅ |
+| State IBS Rate / CBS Rate | – | – | 0,10 / 0,90 |
+
+Linhas de imposto da 226771 (`EXPORT_20261110_185002.xlsx`): CBS1 (CBS devido 0,90% = 18,00), CBSC (CBS retido 18,00 – Withholding Tax / Tax Incl. in Net Value = X), IB1S (IBS devido 0,10% = 2,00), IBCS (IBS retido 2,00 – X / X), ICSQ, IIRW (X / X), ISSE.
+
+Arquivos: `EXPORT_20261110_184901.xlsx`, `EXPORT_20261110_184934.xlsx`, `EXPORT_20261110_185002.xlsx`.
+
+## 2a. Resultado do teste de 10.11.2026 (NF 226771, versão 0.7)
+
+| Ponto | Resultado |
+|---|---|
+| CBS/IBS no item (#15) | ✅ A01 / 000 / 000001 |
+| CFOP / natureza da operação | ✅ 5933/AA / Prestação de serviço tributado pelo ISSQN |
+| Parceiro RE, Service NF/NF-e, Municipal | ✅ |
+| Retenções (CSLL, IRRF, CBS, IBS) com flags | ✅ |
+| **Total da NF** | ❌ **2.040,00** para serviço de 2.000,00 – CBS (18,00) e IBS (2,00) devidos somados ao total (linhas CBS1 / IB1S sem "Tax Incl. in Net Value") – **novo problema** |
+| Descrição do material | ⚠️ ainda em inglês – material 4083 provavelmente sem texto em português na MAKT (o programa usa o idioma de logon como reserva) |
+| Série | ⚠️ vazia – parâmetro `NF_SERIES` não criado? |
+| Código de recolhimento | ⚠️ vazio – parâmetro `COLLCODE` não criado, ou campo com outro nome na `BAPI_J_1BNFSTX` |
+| Lei ISS / situação | I02 / A (parâmetro `TAXLW3`; NF do SD: I01 / T) |
+
 ## 3. Encerramento dos testes (06.11.2026)
 
 Testes encerrados com as NFs 226758 (v0.5), 226759 e 226761 (v0.6). Resultado:
@@ -125,4 +153,4 @@ Observações dos últimos testes (para o fiscal):
 | Série | 1 | vazia (v0.7 / parâmetro `NF_SERIES`) |
 | Descrição do material | Português | inglês (v0.7) |
 
-NFs de teste a estornar antes de qualquer envio à Prefeitura (J1BNFE): 226751, 226752, 226753, 226756, 226758, 226759, 226761.
+NFs de teste a estornar antes de qualquer envio à Prefeitura (J1BNFE): 226751, 226752, 226753, 226756, 226758, 226759, 226761, 226764, 226771.
